@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: credra
+      POSTGRES_PASSWORD: credra
+      POSTGRES_DB: credra
+    # Host port 5433 → avoids clashing with a local Postgres install on 5432 (common on Windows).
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U credra -d credra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - credra_pg:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+volumes:
+  credra_pg:

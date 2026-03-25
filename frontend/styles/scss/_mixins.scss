@@ -1,0 +1,30 @@
+@use "variables" as *;
+
+@mixin container {
+  width: 100%;
+  max-width: $max-width;
+  margin-inline: auto;
+  // Tighter on very narrow viewports; cap on large screens
+  padding-inline: clamp(0.875rem, 4.2vw, 2rem);
+  min-width: 0;
+}
+
+@mixin heading-display {
+  font-family: $font-heading;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: $color-deep-blue;
+}
+
+@mixin body-text {
+  font-family: $font-body;
+  font-weight: 400;
+  line-height: 1.65;
+  color: $color-text-muted;
+}
+
+@mixin focus-ring {
+  outline: 2px solid $color-electric-purple;
+  outline-offset: 3px;
+}
