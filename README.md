@@ -10,6 +10,11 @@ AI-native infrastructure that helps financial apps decide who to trust with mone
 | **L4** | API (Node.js, TypeScript) | `backend/` |
 | **L5** | Dashboard (Next.js, TypeScript, SCSS) | `frontend/` |
 
+## Deployment guides
+
+- Full stack via Docker Compose (single host): `DOCKER_DEPLOY.md`
+- Frontend on Vercel + external services: `VERCEL_DEPLOY.md`
+
 ## Prerequisites
 
 - Node.js 20+

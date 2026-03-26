@@ -1,21 +1,114 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: credra
-      POSTGRES_PASSWORD: credra
-      POSTGRES_DB: credra
-    # Host port 5433 → avoids clashing with a local Postgres install on 5432 (common on Windows).
+      POSTGRES_USER: ${POSTGRES_USER:-credra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-credra}
+      POSTGRES_DB: ${POSTGRES_DB:-credra}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U credra -d credra"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-credra} -d ${POSTGRES_DB:-credra}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     volumes:
       - credra_pg:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  processing:
+    build:
+      context: ./processing
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-credra}:${POSTGRES_PASSWORD:-credra}@postgres:5432/${POSTGRES_DB:-credra}
+      DATABASE_SSLMODE: ${DATABASE_SSLMODE:-disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PROCESSING_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ai-layer:
+    build:
+      context: ./ai-layer
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8001
+    ports:
+      - "${AI_LAYER_HOST_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-credra}:${POSTGRES_PASSWORD:-credra}@postgres:5432/${POSTGRES_DB:-credra}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      DATABASE_SSL_REJECT_UNAUTHORIZED: ${DATABASE_SSL_REJECT_UNAUTHORIZED:-false}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:-change-me-in-production}
+      CLIENT_JWT_SECRET: ${CLIENT_JWT_SECRET:-change-me-in-production}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-false}
+      AI_SERVICE_URL: http://ai-layer:8001
+      PROCESSING_SERVICE_URL: http://processing:8000
+      MONO_SECRET_KEY: ${MONO_SECRET_KEY:-}
+      MONO_API_BASE: ${MONO_API_BASE:-https://api.withmono.com}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-Credra <noreply@example.com>}
+      BILLING_RECEIVING_BANK_NAME: ${BILLING_RECEIVING_BANK_NAME:-GTBank}
+      BILLING_RECEIVING_ACCOUNT_NUMBER: ${BILLING_RECEIVING_ACCOUNT_NUMBER:-0558518751}
+      BILLING_RECEIVING_ACCOUNT_NAME: ${BILLING_RECEIVING_ACCOUNT_NAME:-Onoja William Bosworth}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      processing:
+        condition: service_healthy
+      ai-layer:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_HOST_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000/api/v1}
+        NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN:-http://localhost:4000}
+        NEXT_PUBLIC_MONO_PUBLIC_KEY: ${NEXT_PUBLIC_MONO_PUBLIC_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   credra_pg:

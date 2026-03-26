@@ -1,0 +1,634 @@
+@use "sass:color";
+@use "../../styles/scss/variables" as *;
+
+// Admin shell — aligned with marketing (cream / deep blue / purple accents)
+$panel-bg: transparent;
+$panel-surface: $color-white;
+$panel-elevated: $color-soft-white;
+$panel-border: $color-border;
+$panel-text: $color-deep-blue;
+$panel-muted: $color-text-muted;
+$accent: $color-electric-purple;
+$accent-dim: rgba(108, 92, 231, 0.12);
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-x: clip;
+  display: flex;
+  flex-direction: column;
+  color: $panel-text;
+  background: #fffbef;
+  background-image:
+    radial-gradient(120% 80% at 100% 0%, rgba(108, 92, 231, 0.07), transparent 52%),
+    linear-gradient(180deg, #faf9f6 0%, #f3f1ec 100%);
+}
+
+.topBar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(0.85rem, 2.5vw, 1.15rem) clamp(1rem, 3vw, 1.5rem);
+  padding-top: calc(clamp(0.85rem, 2.5vw, 1.15rem) + env(safe-area-inset-top, 0));
+  border-bottom: 1px solid $panel-border;
+  background: rgba($panel-surface, 0.92);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 rgba(10, 37, 64, 0.05);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    margin: 0;
+    font-size: 0.82rem;
+    color: $panel-muted;
+    max-width: 36ch;
+    line-height: 1.45;
+  }
+}
+
+.brandHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.brandLogo {
+  flex-shrink: 0;
+  display: block;
+}
+
+.authLogo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.35rem;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+
+  button {
+    border: none;
+    border-radius: 0.65rem;
+    background: $color-deep-blue;
+    color: $color-white;
+    padding: 0.55rem 0.95rem;
+    min-height: 2.5rem;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+}
+
+.btnGhost {
+  background: transparent !important;
+  color: $panel-text !important;
+  border: 1px solid $panel-border !important;
+}
+
+.bannerError {
+  margin: 0;
+  padding: 0.65rem clamp(1rem, 3vw, 1.5rem);
+  background: rgba(220, 38, 38, 0.08);
+  color: color.adjust(#b91c1c, $lightness: -8%);
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.loadingBanner {
+  margin: 0;
+  padding: 0.75rem clamp(1rem, 3vw, 1.5rem);
+  color: $panel-muted;
+  font-size: 0.88rem;
+}
+
+// --- Mobile / tablet: horizontal scroll nav ---
+.navRail {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.65rem clamp(1rem, 3vw, 1.5rem);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  border-bottom: 1px solid $panel-border;
+  background: rgba($panel-surface, 0.85);
+  flex-shrink: 0;
+
+  &::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $panel-border;
+    border-radius: 3px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .navRail {
+    display: none;
+  }
+}
+
+.navBtn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid $panel-border;
+  background: $panel-surface;
+  color: $panel-muted;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    color: $panel-text;
+    border-color: color.adjust($panel-border, $lightness: 8%);
+  }
+}
+
+.navBtnActive {
+  background: $accent-dim;
+  border-color: rgba($accent, 0.4);
+  color: color.adjust($accent, $lightness: -12%);
+}
+
+.navBtnNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.35rem;
+  background: rgba(10, 37, 64, 0.06);
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: $panel-muted;
+}
+
+.navBtnActive .navBtnNum {
+  background: rgba($accent, 0.22);
+  color: $panel-text;
+}
+
+// --- Desktop sidebar ---
+.panelLayout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.navSidebar {
+  display: none;
+  flex-direction: column;
+  width: 15.5rem;
+  flex-shrink: 0;
+  padding: 1rem 0.65rem 1.5rem;
+  border-right: 1px solid $panel-border;
+  background: $panel-surface;
+  overflow-y: auto;
+  gap: 0.2rem;
+}
+
+@media (min-width: 1024px) {
+  .navSidebar {
+    display: flex;
+  }
+}
+
+.navSidebarLabel {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: $panel-muted;
+  padding: 0.35rem 0.75rem 0.65rem;
+}
+
+.sidebarBtn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.55rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: $panel-muted;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background: rgba(10, 37, 64, 0.04);
+    color: $panel-text;
+  }
+}
+
+.sidebarBtnActive {
+  background: $accent-dim;
+  border-color: rgba($accent, 0.35);
+  color: color.adjust($accent, $lightness: -12%);
+}
+
+.sidebarBtnNum {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 0.35rem;
+  background: rgba(10, 37, 64, 0.06);
+  display: grid;
+  place-items: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+  margin-top: 0.05rem;
+}
+
+.sidebarBtnActive .sidebarBtnNum {
+  background: rgba($accent, 0.25);
+  color: $panel-text;
+}
+
+.sidebarBtnText {
+  min-width: 0;
+}
+
+// --- Main content ---
+.mainScroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  padding-bottom: calc(clamp(1rem, 2.5vw, 1.5rem) + env(safe-area-inset-bottom, 0));
+}
+
+.section {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.sectionHead {
+  margin: 0 0 1.1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid $panel-border;
+
+  h2 {
+    margin: 0 0 0.35rem;
+    font-size: clamp(1rem, 2.2vw, 1.2rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.82rem;
+    color: $panel-muted;
+    line-height: 1.45;
+    max-width: 52ch;
+  }
+}
+
+.statGrid {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  margin-bottom: 1.25rem;
+}
+
+.statCard {
+  background: $panel-elevated;
+  border: 1px solid $panel-border;
+  border-radius: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  min-width: 0;
+}
+
+.statLabel {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $panel-muted;
+  margin-bottom: 0.35rem;
+}
+
+.statValue {
+  font-size: clamp(1.05rem, 2.5vw, 1.25rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: $panel-text;
+  line-height: 1.2;
+}
+
+.subBlock {
+  margin-top: 1.25rem;
+
+  &:first-of-type {
+    margin-top: 0;
+  }
+}
+
+.subTitle {
+  margin: 0 0 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(10, 37, 64, 0.45);
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border-radius: 0.55rem;
+  border: 1px solid $panel-border;
+  background: $panel-elevated;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  min-width: 28rem;
+
+  th,
+  td {
+    padding: 0.5rem 0.65rem;
+    text-align: left;
+    border-bottom: 1px solid $panel-border;
+    vertical-align: top;
+    max-width: 14rem;
+    overflow-wrap: anywhere;
+  }
+
+  th {
+    background: rgba(10, 37, 64, 0.04);
+    color: $panel-text;
+    font-weight: 700;
+    text-transform: capitalize;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:hover td {
+    background: rgba(10, 37, 64, 0.03);
+  }
+}
+
+.emptyNote {
+  margin: 0;
+  padding: 0.85rem;
+  font-size: 0.82rem;
+  color: $panel-muted;
+  border: 1px dashed $panel-border;
+  border-radius: 0.55rem;
+  text-align: center;
+}
+
+.mutedNote {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: $panel-muted;
+  line-height: 1.55;
+}
+
+.kvGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 560px) {
+  .kvGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kvLabel {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $panel-muted;
+  margin-bottom: 0.25rem;
+}
+
+.kvValue {
+  font-size: 0.85rem;
+  color: $panel-text;
+  overflow-wrap: anywhere;
+}
+
+.subBlockInner {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid $panel-border;
+}
+
+.codeBlock {
+  margin: 0.65rem 0 0;
+  padding: 0.85rem;
+  border-radius: 0.55rem;
+  border: 1px solid $panel-border;
+  background: $panel-elevated;
+  color: $panel-text;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 18rem;
+}
+
+.exportRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid $panel-border;
+}
+
+.exportBtn {
+  border: 1px solid rgba($accent, 0.45);
+  border-radius: 0.55rem;
+  background: rgba($accent, 0.1);
+  color: $panel-text;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: rgba($accent, 0.22);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba($accent, 0.08);
+  }
+}
+
+.transferActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.extrasRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: $panel-muted;
+  line-height: 1.5;
+
+  strong {
+    color: $panel-text;
+    font-weight: 700;
+  }
+}
+
+.chartWrap {
+  margin-top: 0.5rem;
+  width: 100%;
+  min-height: 220px;
+}
+
+.chartEmpty {
+  margin: 0;
+  padding: 1rem;
+  color: $panel-muted;
+  font-size: 0.85rem;
+}
+
+// --- Auth ---
+.authWrap {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: #fffbef;
+  background-image:
+    radial-gradient(120% 80% at 100% 0%, rgba(108, 92, 231, 0.09), transparent 52%),
+    linear-gradient(180deg, #faf9f6 0%, #f3f1ec 100%);
+  padding: clamp(0.75rem, 4vw, 1.25rem);
+  padding-bottom: calc(clamp(0.75rem, 4vw, 1.25rem) + env(safe-area-inset-bottom, 0));
+  padding-top: calc(clamp(0.75rem, 4vw, 1.25rem) + env(safe-area-inset-top, 0));
+  box-sizing: border-box;
+  overflow-x: clip;
+}
+
+.authCard {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid $panel-border;
+  border-radius: 1rem;
+  background: $panel-surface;
+  color: $panel-text;
+  padding: clamp(1rem, 4vw, 1.3rem);
+  box-sizing: border-box;
+  box-shadow: 0 18px 50px rgba(10, 37, 64, 0.08);
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.2rem, 4vw, 1.4rem);
+    line-height: 1.25;
+  }
+
+  p {
+    margin: 0;
+    color: $panel-muted;
+    line-height: 1.5;
+  }
+
+  label {
+    display: grid;
+    gap: 0.4rem;
+    color: $panel-muted;
+    font-size: 0.9rem;
+  }
+
+  input {
+    border: 1px solid $panel-border;
+    border-radius: 0.65rem;
+    background: $panel-elevated;
+    color: $panel-text;
+    padding: 0.7rem 0.8rem;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    font-size: 1rem;
+  }
+
+  button {
+    border: none;
+    border-radius: 0.7rem;
+    background: $color-deep-blue;
+    color: $color-white;
+    padding: 0.75rem;
+    min-height: 2.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    box-shadow: 0 10px 28px rgba(10, 37, 64, 0.14);
+  }
+
+  .secondaryBtn {
+    background: transparent !important;
+    color: $panel-text !important;
+    border: 1px solid $panel-border !important;
+    box-shadow: none !important;
+  }
+}
+
+.error {
+  margin: 0;
+  color: color.adjust(#b91c1c, $lightness: -5%);
+  font-size: 0.9rem;
+}

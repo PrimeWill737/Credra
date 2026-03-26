@@ -1,0 +1,254 @@
+// Motion: short durations, ease curves that feel physical — not bouncy “marketing” defaults.
+@use "variables" as *;
+
+@keyframes hero-line-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.1rem, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hero-accent-draw {
+  from {
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+
+  to {
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+}
+
+@keyframes hero-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0.75rem, 0.5rem, 0) rotate(-0.4deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes ring-tick {
+  from {
+    --ring-deg: 0deg;
+  }
+
+  to {
+    --ring-deg: 252deg;
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@keyframes landing-ambient {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+
+  45% {
+    opacity: 0.48;
+  }
+}
+
+@keyframes pulse-strip-shimmer {
+  0% {
+    background-position: -120% 0;
+  }
+
+  100% {
+    background-position: 220% 0;
+  }
+}
+
+@keyframes hero-card-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 18px 50px rgba(10, 37, 64, 0.1),
+      0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  }
+
+  50% {
+    box-shadow:
+      0 24px 58px rgba(10, 37, 64, 0.11),
+      0 0 0 1px rgba(108, 92, 231, 0.14),
+      0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  }
+}
+
+// Scroll-driven sections: horizontal / vertical / fade variants; replay on re-entry.
+.reveal {
+  --dx: 0;
+  --dy: 0;
+  --skew: 0deg;
+  --rot: 0deg;
+  --scale: 0.96;
+  --reveal-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --reveal-dur: 0.95s;
+  --reveal-dur-opacity: 0.82s;
+  // No default blur — parent filter blurs all descendants (unreadable body copy).
+  --reveal-blur: 0px;
+
+  opacity: 0;
+  transform: translate3d(var(--dx), var(--dy), 0) skewX(var(--skew)) rotate(var(--rot))
+    scale(var(--scale));
+  transform-origin: 50% 45%;
+  filter: blur(var(--reveal-blur, 0px));
+  transition:
+    opacity var(--reveal-dur-opacity) var(--reveal-ease),
+    transform var(--reveal-dur) var(--reveal-ease),
+    filter 0.68s var(--reveal-ease);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .reveal,
+  .reveal--visible {
+    --reveal-blur: 0px;
+  }
+}
+
+// Vertical: scroll-inferred up / down
+.reveal[data-variant="auto"][data-enter="up"] {
+  --dy: -1.75rem;
+  --dx: 0;
+  --skew: 0deg;
+  --rot: 0deg;
+}
+
+.reveal[data-variant="auto"][data-enter="down"] {
+  --dy: 2.1rem;
+  --dx: 0;
+  --skew: 0deg;
+  --rot: 0deg;
+}
+
+// Horizontal: slide + slight skew (HUD / panel feel)
+.reveal[data-variant="left"] {
+  --dx: -clamp(2.5rem, 8vw, 4.25rem);
+  --dy: 0;
+  --skew: 3deg;
+  --rot: -0.35deg;
+}
+
+.reveal[data-variant="right"] {
+  --dx: clamp(2.5rem, 8vw, 4.25rem);
+  --dy: 0;
+  --skew: -3deg;
+  --rot: 0.35deg;
+}
+
+@media (max-width: 480px) {
+  .reveal[data-variant="left"],
+  .reveal[data-variant="right"] {
+    --skew: 1.25deg;
+  }
+
+  .reveal[data-variant="left"] {
+    --rot: -0.15deg;
+  }
+
+  .reveal[data-variant="right"] {
+    --rot: 0.15deg;
+  }
+}
+
+@media (max-width: 639px) {
+  .reveal {
+    --scale: 1;
+    --reveal-blur: 0px;
+    filter: none;
+  }
+
+  .reveal[data-variant="left"],
+  .reveal[data-variant="right"] {
+    --dx: 0;
+    --skew: 0deg;
+    --rot: 0deg;
+  }
+}
+
+// Depth fade — minimal drift, heavy atmosphere
+.reveal[data-variant="fade"] {
+  --dx: 0;
+  --dy: 0.75rem;
+  --skew: 0deg;
+  --rot: 0deg;
+  --scale: 0.97;
+  --reveal-blur: 10px;
+}
+
+.reveal--visible {
+  opacity: 1;
+  --dx: 0;
+  --dy: 0;
+  --skew: 0deg;
+  --rot: 0deg;
+  --scale: 1;
+  --reveal-blur: 0px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+
+  .reveal .product-panel__grid .product-card,
+  .reveal--visible .product-panel__grid .product-card,
+  .reveal .flow-rail .flow-rail__card,
+  .reveal--visible .flow-rail .flow-rail__card,
+  .reveal .pulse-strip__item,
+  .reveal--visible .pulse-strip__item {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .landing-main::before {
+    animation: none !important;
+    opacity: 0.22 !important;
+  }
+
+  .pulse-strip::after {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+
+  .hero-mega__card {
+    animation:
+      hero-card-in 1s cubic-bezier(0.22, 1, 0.36, 1) 0.35s forwards !important;
+  }
+
+  .hero-mega__stage *,
+  .hero-mega__card,
+  .hero-mega__accent {
+    animation: none !important;
+  }
+
+  .hero-mega__ring {
+    --ring-deg: 252deg !important;
+    animation: none !important;
+  }
+}
