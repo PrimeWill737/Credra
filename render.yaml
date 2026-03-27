@@ -1,0 +1,63 @@
+# Render Blueprint — wire AI + processing URLs into the backend automatically.
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# Deploy: Dashboard → New → Blueprint → connect this repo, or `render blueprint apply`.
+# Adjust `name` fields if they must match your existing Render service names.
+#
+# Processing: set DATABASE_URL in the dashboard (managed Postgres / Supabase) or add a `databases:` block.
+
+version: "1"
+
+services:
+  - type: web
+    name: credra-processing
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: processing
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: credra-ai-layer
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: ai-layer
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+
+  - type: web
+    name: credra-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AI_SERVICE_URL
+        fromService:
+          name: credra-ai-layer
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: PROCESSING_SERVICE_URL
+        fromService:
+          name: credra-processing
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_COOKIE_SECURE
+        value: "true"
+      - key: ADMIN_JWT_SECRET
+        generateValue: true
+      - key: CLIENT_JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false

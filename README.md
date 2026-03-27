@@ -13,7 +13,7 @@ AI-native infrastructure that helps financial apps decide who to trust with mone
 ## Deployment guides
 
 - Full stack via Docker Compose (single host): `DOCKER_DEPLOY.md`
-- Frontend on Vercel + external services: `VERCEL_DEPLOY.md`
+- Render (backend, AI, processing, frontend as separate services): `RENDER_DEPLOY.md` (see root `render.yaml` to auto-wire `AI_SERVICE_URL` / `PROCESSING_SERVICE_URL`)
 
 ## Prerequisites
 

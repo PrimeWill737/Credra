@@ -85,8 +85,24 @@ function isLikelyNetworkFailure(err: unknown): boolean {
   return false;
 }
 
+function isLocalApiOrigin(): boolean {
+  try {
+    const u = new URL(API_ORIGIN);
+    return u.hostname === "localhost" || u.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 function networkFailureHint(): string {
-  return `Cannot reach the API (${API_ORIGIN}). Start the backend in another terminal: cd backend && npm install && npm run dev`;
+  if (isLocalApiOrigin()) {
+    return `Cannot reach the API (${API_ORIGIN}). Start the backend locally: cd backend && npm install && npm run dev — then open ${API_ORIGIN}/health`;
+  }
+  return [
+    `Cannot reach the API (${API_ORIGIN}).`,
+    `Open ${API_ORIGIN}/health or ${API_ORIGIN}/api/v1/health in a new tab — you should see JSON {"ok":true,...}. If you get HTML "Not found", the Render service may be the wrong app (root directory must be backend) or needs redeploy.`,
+    `If health returns JSON but this page still fails, check CORS and redeploy the frontend after setting NEXT_PUBLIC_API_BASE_URL and NEXT_PUBLIC_API_ORIGIN.`,
+  ].join(" ");
 }
 
 function authHeaders(token: string): HeadersInit {
