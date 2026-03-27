@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 4000
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000,https://credra.me,https://www.credra.me}
       DATABASE_URL: postgresql://${POSTGRES_USER:-credra}:${POSTGRES_PASSWORD:-credra}@postgres:5432/${POSTGRES_DB:-credra}
       DATABASE_SSL: ${DATABASE_SSL:-false}
       DATABASE_SSL_REJECT_UNAUTHORIZED: ${DATABASE_SSL_REJECT_UNAUTHORIZED:-false}
