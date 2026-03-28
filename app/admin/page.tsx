@@ -6,6 +6,14 @@ import { CredraLogo } from "../components/CredraLogo";
 import { FlashNotices } from "../components/FlashNotices";
 import { LoadingOverlay } from "../components/LoadingOverlay";
 import {
+  isPlausibleEmail,
+  sanitizeEmailInput,
+  sanitizeMonoAuthCode,
+  sanitizePasswordInput,
+  sanitizePendingToken,
+  sanitizeTotpDigits,
+} from "../lib/inputSanitize";
+import {
   humanizeAdminError,
   humanizeApiSlug,
   humanizeMonoForUser,
@@ -222,11 +230,15 @@ export default function AdminPage() {
   );
 
   const exchangeMonoCodeForAccount = useCallback(async (code: string) => {
+    const clean = sanitizeMonoAuthCode(code);
+    if (!clean) {
+      throw new Error("no auth code");
+    }
     const response = await fetch(`${API_BASE}/integrations/mono/token`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json", ...authHeaders(token) },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code: clean }),
     });
 
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
@@ -256,7 +268,7 @@ export default function AdminPage() {
       monoRef.current = new Connect({
         key: MONO_PUBLIC_KEY,
         onSuccess: async (payload: { code?: string }) => {
-          const code = String(payload?.code ?? "");
+          const code = sanitizeMonoAuthCode(String(payload?.code ?? ""));
           if (!code) {
             setFlashError(humanizeMonoForUser("no auth code", "connect"));
             return;
@@ -355,11 +367,16 @@ export default function AdminPage() {
     setFlashError("");
     setFlashSuccess("");
     try {
+      const cleanEmail = sanitizeEmailInput(email);
+      const cleanPassword = sanitizePasswordInput(password);
+      if (!isPlausibleEmail(cleanEmail) || !cleanPassword) {
+        throw new Error("Invalid admin credentials.");
+      }
       const response = await fetch(`${API_BASE}/admin/auth/login`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: cleanEmail, password: cleanPassword }),
       });
       if (!response.ok) {
         const errBody = (await response.json().catch(() => null)) as {
@@ -408,11 +425,16 @@ export default function AdminPage() {
     setFlashError("");
     setFlashSuccess("");
     try {
+      const pt = sanitizePendingToken(pendingToken);
+      const code = sanitizeTotpDigits(totpCode, 6);
+      if (!pt || code.length !== 6) {
+        throw new Error("Invalid authenticator code.");
+      }
       const response = await fetch(`${API_BASE}/admin/auth/totp/verify`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pendingToken, code: totpCode }),
+        body: JSON.stringify({ pendingToken: pt, code }),
       });
       if (!response.ok) {
         throw new Error("Invalid authenticator code.");
@@ -821,8 +843,9 @@ export default function AdminPage() {
               inputMode="numeric"
               autoComplete="one-time-code"
               value={totpCode}
-              onChange={(e) => setTotpCode(e.target.value)}
+              onChange={(e) => setTotpCode(sanitizeTotpDigits(e.target.value, 6))}
               placeholder="000000"
+              maxLength={6}
               required
             />
           </label>
@@ -872,8 +895,9 @@ export default function AdminPage() {
               name="admin-email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(sanitizeEmailInput(e.target.value))}
               autoComplete="username"
+              maxLength={254}
               required
             />
           </label>
@@ -883,8 +907,9 @@ export default function AdminPage() {
               name="admin-password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => setPassword(sanitizePasswordInput(e.target.value))}
               autoComplete="current-password"
+              maxLength={128}
               required
             />
           </label>

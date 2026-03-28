@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ClientWorkspaceCta } from "./ClientWorkspaceCta";
 import { CredraLogo } from "./CredraLogo";
 
 const links = [
@@ -64,13 +65,13 @@ export function SiteHeader() {
               </li>
             ))}
           </ul>
-          <a
+          <ClientWorkspaceCta
             className="btn btn--primary site-header__cta"
             href="/client"
-            onClick={() => setOpen(false)}
-          >
-            Request access
-          </a>
+            loggedOutLabel="Request access"
+            loggedInLabel="Dashboard"
+            onNavigate={() => setOpen(false)}
+          />
         </nav>
       </div>
     </header>
