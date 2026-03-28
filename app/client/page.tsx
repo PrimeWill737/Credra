@@ -8,6 +8,24 @@ import { LoadingOverlay } from "../components/LoadingOverlay";
 import { SignupSuccess } from "../components/SignupSuccess";
 import { ClientAiInsight, type AiEndpointKind } from "./ClientAiInsight";
 import {
+  isPlausibleEmail,
+  sanitizeBillingCycle,
+  sanitizeEmailInput,
+  sanitizeMonoAuthCode,
+  sanitizeOrganizationName,
+  sanitizeOtpDigits,
+  sanitizePasswordInput,
+  sanitizePendingToken,
+  sanitizePersonName,
+  sanitizePlanNameInput,
+  sanitizePositiveIntegerString,
+  sanitizeSignedDecimalInput,
+  sanitizeTransactionReference,
+  sanitizeUnsignedDecimalInput,
+  sanitizeVolatilityHintInput,
+} from "../lib/inputSanitize";
+import { CREDRA_CLIENT_TOKEN_LS_KEY } from "../lib/clientSessionStorage";
+import {
   humanizeApiSlug,
   humanizeMonoForUser,
   humanizeNetworkFailure,
@@ -388,7 +406,7 @@ export default function ClientDashboardPage() {
   );
 
   useEffect(() => {
-    const savedToken = localStorage.getItem("credra_client_token") ?? "";
+    const savedToken = localStorage.getItem(CREDRA_CLIENT_TOKEN_LS_KEY) ?? "";
     const savedKey = localStorage.getItem("credra_client_apiKey") ?? "";
     if (savedToken) setToken(savedToken);
     if (savedKey) setApiKey(savedKey);
@@ -397,10 +415,14 @@ export default function ClientDashboardPage() {
   }, []);
 
   const exchangeMonoCodeForAccount = useCallback(async (code: string) => {
+    const clean = sanitizeMonoAuthCode(code);
+    if (!clean) {
+      throw new Error("no auth code");
+    }
     const response = await fetch(`${API_BASE}/integrations/mono/token`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify({ code: clean }),
     });
     const body = (await response.json().catch(() => null)) as Record<
       string,
@@ -437,7 +459,7 @@ export default function ClientDashboardPage() {
       monoRef.current = new Connect({
         key: MONO_PUBLIC_KEY,
         onSuccess: async (payload: { code?: string }) => {
-          const code = String(payload?.code ?? "");
+          const code = sanitizeMonoAuthCode(String(payload?.code ?? ""));
           if (!code) {
             setFlashError(humanizeMonoForUser("no auth code", "connect"));
             return;
@@ -539,6 +561,16 @@ export default function ClientDashboardPage() {
         ) {
           throw new Error("invalid_numbers");
         }
+        const MAX_MONEY = 1e15;
+        const MAX_TX = 1e9;
+        if (
+          Math.abs(monthly_income) > MAX_MONEY ||
+          Math.abs(monthly_spend) > MAX_MONEY ||
+          tx_count < 0 ||
+          tx_count > MAX_TX
+        ) {
+          throw new Error("invalid_numbers");
+        }
         const r = await fetch(`${API_BASE}/client/playground/${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authz(token) },
@@ -612,13 +644,25 @@ export default function ClientDashboardPage() {
     setFlashError("");
     setFlashSuccess("");
     try {
+      const companyName = sanitizeOrganizationName(signupCompany);
+      const contactEmail = sanitizeEmailInput(signupEmail);
+      const password = sanitizePasswordInput(signupPassword);
+      if (!companyName) {
+        throw new Error("missing_required_fields");
+      }
+      if (!isPlausibleEmail(contactEmail)) {
+        throw new Error("missing_required_fields");
+      }
+      if (password.length < 8) {
+        throw new Error("missing_required_fields");
+      }
       const r = await fetch(`${API_BASE}/client/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyName: signupCompany,
-          contactEmail: signupEmail,
-          password: signupPassword,
+          companyName,
+          contactEmail,
+          password,
         }),
       });
       const body = await r.json().catch(() => null);
@@ -631,7 +675,7 @@ export default function ClientDashboardPage() {
         setPendingSignupToken(String(body.pendingToken));
         setSignupOtp("");
         setFlashSuccess(
-          `We sent a 6-digit code to ${String(signupEmail || "").trim()}. It expires in 10 minutes — enter it below to finish.`,
+          `We sent a 6-digit code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes — enter it below to finish.`,
         );
         return;
       }
@@ -651,12 +695,17 @@ export default function ClientDashboardPage() {
     setFlashError("");
     setFlashSuccess("");
     try {
+      const pendingToken = sanitizePendingToken(pendingSignupToken);
+      const otp = sanitizeOtpDigits(signupOtp, 6);
+      if (!pendingToken || otp.length !== 6) {
+        throw new Error("pending_token_and_otp_required");
+      }
       const r = await fetch(`${API_BASE}/client/auth/otp/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pendingToken: pendingSignupToken,
-          otp: signupOtp,
+          pendingToken,
+          otp,
         }),
       });
       const body = await r.json().catch(() => null);
@@ -690,10 +739,14 @@ export default function ClientDashboardPage() {
     setLoading(true);
     setFlashError("");
     try {
+      const pendingToken = sanitizePendingToken(pendingSignupToken);
+      if (!pendingToken) {
+        throw new Error("pending_token_required");
+      }
       const r = await fetch(`${API_BASE}/client/auth/otp/resend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pendingToken: pendingSignupToken }),
+        body: JSON.stringify({ pendingToken }),
       });
       const body = await r.json().catch(() => null);
       if (!r.ok) {
@@ -701,7 +754,7 @@ export default function ClientDashboardPage() {
         throw new Error(msg);
       }
       setFlashSuccess(
-        `We sent a new code to ${String(signupEmail || "").trim()}. It expires in 10 minutes.`,
+        `We sent a new code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes.`,
       );
     } catch (e) {
       setFlashSuccess("");
@@ -720,10 +773,15 @@ export default function ClientDashboardPage() {
     setFlashSuccess("");
     setLoginSuccess(false);
     try {
+      const email = sanitizeEmailInput(loginEmail);
+      const password = sanitizePasswordInput(loginPassword);
+      if (!isPlausibleEmail(email) || !password) {
+        throw new Error("email_and_password_required");
+      }
       const r = await fetch(`${API_BASE}/client/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+        body: JSON.stringify({ email, password }),
       });
       const body = await r.json().catch(() => null);
       if (!r.ok) {
@@ -754,15 +812,19 @@ export default function ClientDashboardPage() {
     setFlashError("");
     setFlashSuccess("");
     try {
+      const ref = sanitizeTransactionReference(transactionReference);
+      if (!ref) {
+        throw new Error("missing_required_fields");
+      }
       const r = await fetch(`${API_BASE}/client/subscription/transfer`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authz(token) },
         body: JSON.stringify({
-          planName,
-          cycle,
-          amountDue,
-          payerName,
-          transactionReference,
+          planName: sanitizePlanNameInput(planName),
+          cycle: sanitizeBillingCycle(cycle),
+          amountDue: sanitizeUnsignedDecimalInput(amountDue, 16),
+          payerName: sanitizePersonName(payerName),
+          transactionReference: ref,
         }),
       });
       const body = await r.json().catch(() => null);
@@ -792,8 +854,8 @@ export default function ClientDashboardPage() {
   }
 
   function applyPlan(card: PlanCard) {
-    setPlanName(card.name);
-    setCycle(card.cycle);
+    setPlanName(sanitizePlanNameInput(card.name));
+    setCycle(sanitizeBillingCycle(card.cycle));
     setAmountDue(String(card.amountNgn));
     setActiveNav("subscription");
     window.requestAnimationFrame(() => {
@@ -815,8 +877,8 @@ export default function ClientDashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authz(token) },
         body: JSON.stringify({
-          currentPassword: pwdCurrent,
-          newPassword: pwdNew,
+          currentPassword: sanitizePasswordInput(pwdCurrent),
+          newPassword: sanitizePasswordInput(pwdNew),
         }),
       });
       const body = (await r.json().catch(() => ({}))) as { error?: string };
@@ -886,7 +948,7 @@ export default function ClientDashboardPage() {
     setFlashSuccess("");
     setLoading(false);
     setLoginSubmitting(false);
-    localStorage.removeItem("credra_client_token");
+    localStorage.removeItem(CREDRA_CLIENT_TOKEN_LS_KEY);
     // keep apiKey so they can copy/paste even after logout
   }
 
@@ -900,7 +962,7 @@ export default function ClientDashboardPage() {
         onDone={() => {
           setToken(signupSuccessToken);
           setApiKey(signupSuccessApiKey);
-          localStorage.setItem("credra_client_token", signupSuccessToken);
+          localStorage.setItem(CREDRA_CLIENT_TOKEN_LS_KEY, signupSuccessToken);
           localStorage.setItem("credra_client_apiKey", signupSuccessApiKey);
           setSignupSuccess(false);
         }}
@@ -919,7 +981,7 @@ export default function ClientDashboardPage() {
         subtitle="Opening your workspace."
         onDone={() => {
           setToken(loginSuccessToken);
-          localStorage.setItem("credra_client_token", loginSuccessToken);
+          localStorage.setItem(CREDRA_CLIENT_TOKEN_LS_KEY, loginSuccessToken);
           setLoginSuccess(false);
         }}
       />
@@ -980,18 +1042,20 @@ export default function ClientDashboardPage() {
                   <label>Email</label>
                   <input
                     value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
+                    onChange={(e) => setLoginEmail(sanitizeEmailInput(e.target.value))}
                     type="email"
                     autoComplete="username"
+                    maxLength={254}
                   />
                 </div>
                 <div className={styles.field}>
                   <label>Password</label>
                   <input
                     value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onChange={(e) => setLoginPassword(sanitizePasswordInput(e.target.value))}
                     type="password"
                     autoComplete="current-password"
+                    maxLength={128}
                   />
                 </div>
                 <button
@@ -1023,28 +1087,36 @@ export default function ClientDashboardPage() {
                   <label>Company name</label>
                   <input
                     value={signupCompany}
-                    onChange={(e) => setSignupCompany(e.target.value)}
+                    onChange={(e) =>
+                      setSignupCompany(sanitizeOrganizationName(e.target.value))
+                    }
                     disabled={loading || awaitingOtp}
+                    maxLength={120}
+                    autoComplete="organization"
                   />
                 </div>
                 <div className={styles.field}>
                   <label>Contact email</label>
                   <input
                     value={signupEmail}
-                    onChange={(e) => setSignupEmail(e.target.value)}
+                    onChange={(e) => setSignupEmail(sanitizeEmailInput(e.target.value))}
                     type="email"
                     autoComplete="email"
                     disabled={loading || awaitingOtp}
+                    maxLength={254}
                   />
                 </div>
                 <div className={styles.field}>
                   <label>Password</label>
                   <input
                     value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
+                    onChange={(e) =>
+                      setSignupPassword(sanitizePasswordInput(e.target.value))
+                    }
                     type="password"
                     autoComplete="new-password"
                     disabled={loading || awaitingOtp}
+                    maxLength={128}
                   />
                 </div>
                 {awaitingOtp ? (
@@ -1057,17 +1129,20 @@ export default function ClientDashboardPage() {
                       <label>Verification code</label>
                       <input
                         value={signupOtp}
-                        onChange={(e) => setSignupOtp(e.target.value)}
+                        onChange={(e) =>
+                          setSignupOtp(sanitizeOtpDigits(e.target.value, 6))
+                        }
                         inputMode="numeric"
                         autoComplete="one-time-code"
                         placeholder="000000"
+                        maxLength={6}
                       />
                     </div>
                     <button
                       type="button"
                       className={styles.primaryBtn}
                       onClick={verifySignupOtp}
-                      disabled={loading || !signupOtp.trim()}
+                      disabled={loading || signupOtp.length !== 6}
                     >
                       Verify code
                     </button>
@@ -1206,7 +1281,10 @@ export default function ClientDashboardPage() {
                       <input
                         inputMode="decimal"
                         value={monthlyIncome}
-                        onChange={(e) => setMonthlyIncome(e.target.value)}
+                        onChange={(e) =>
+                          setMonthlyIncome(sanitizeSignedDecimalInput(e.target.value))
+                        }
+                        maxLength={24}
                       />
                     </div>
                     <div className={styles.field}>
@@ -1214,7 +1292,10 @@ export default function ClientDashboardPage() {
                       <input
                         inputMode="decimal"
                         value={monthlySpend}
-                        onChange={(e) => setMonthlySpend(e.target.value)}
+                        onChange={(e) =>
+                          setMonthlySpend(sanitizeSignedDecimalInput(e.target.value))
+                        }
+                        maxLength={24}
                       />
                     </div>
                   </div>
@@ -1224,7 +1305,10 @@ export default function ClientDashboardPage() {
                       <input
                         inputMode="numeric"
                         value={txCount}
-                        onChange={(e) => setTxCount(e.target.value)}
+                        onChange={(e) =>
+                          setTxCount(sanitizePositiveIntegerString(e.target.value))
+                        }
+                        maxLength={10}
                       />
                     </div>
                     <div className={styles.field}>
@@ -1232,7 +1316,10 @@ export default function ClientDashboardPage() {
                       <input
                         inputMode="decimal"
                         value={volatilityHint}
-                        onChange={(e) => setVolatilityHint(e.target.value)}
+                        onChange={(e) =>
+                          setVolatilityHint(sanitizeVolatilityHintInput(e.target.value))
+                        }
+                        maxLength={8}
                       />
                     </div>
                   </div>
@@ -1545,14 +1632,19 @@ export default function ClientDashboardPage() {
                       <label>Plan name</label>
                       <input
                         value={planName}
-                        onChange={(e) => setPlanName(e.target.value)}
+                        onChange={(e) =>
+                          setPlanName(sanitizePlanNameInput(e.target.value))
+                        }
+                        maxLength={64}
                       />
                     </div>
                     <div className={styles.field}>
                       <label>Cycle</label>
                       <select
                         value={cycle}
-                        onChange={(e) => setCycle(e.target.value)}
+                        onChange={(e) =>
+                          setCycle(sanitizeBillingCycle(e.target.value))
+                        }
                       >
                         <option value="weekly">weekly</option>
                         <option value="monthly">monthly</option>
@@ -1566,14 +1658,22 @@ export default function ClientDashboardPage() {
                       <label>Amount due</label>
                       <input
                         value={amountDue}
-                        onChange={(e) => setAmountDue(e.target.value)}
+                        onChange={(e) =>
+                          setAmountDue(sanitizeUnsignedDecimalInput(e.target.value))
+                        }
+                        maxLength={16}
+                        inputMode="decimal"
                       />
                     </div>
                     <div className={styles.field}>
                       <label>Payer name</label>
                       <input
                         value={payerName}
-                        onChange={(e) => setPayerName(e.target.value)}
+                        onChange={(e) =>
+                          setPayerName(sanitizePersonName(e.target.value))
+                        }
+                        maxLength={120}
+                        autoComplete="name"
                       />
                     </div>
                   </div>
@@ -1582,8 +1682,15 @@ export default function ClientDashboardPage() {
                     <label>Transaction reference</label>
                     <input
                       value={transactionReference}
-                      onChange={(e) => setTransactionReference(e.target.value)}
+                      onChange={(e) =>
+                        setTransactionReference(
+                          sanitizeTransactionReference(e.target.value),
+                        )
+                      }
                       placeholder="e.g. TRX/xxxxxxxx"
+                      maxLength={120}
+                      autoComplete="off"
+                      spellCheck={false}
                     />
                   </div>
 
@@ -1591,7 +1698,9 @@ export default function ClientDashboardPage() {
                     type="button"
                     className={styles.primaryBtn}
                     onClick={submitTransfer}
-                    disabled={loading || !transactionReference.trim()}
+                    disabled={
+                      loading || !sanitizeTransactionReference(transactionReference)
+                    }
                   >
                     Submit transfer reference
                   </button>
@@ -1657,7 +1766,10 @@ export default function ClientDashboardPage() {
                     type="password"
                     autoComplete="current-password"
                     value={pwdCurrent}
-                    onChange={(e) => setPwdCurrent(e.target.value)}
+                    onChange={(e) =>
+                      setPwdCurrent(sanitizePasswordInput(e.target.value))
+                    }
+                    maxLength={128}
                   />
                 </div>
                 <div className={styles.field}>
@@ -1666,7 +1778,8 @@ export default function ClientDashboardPage() {
                     type="password"
                     autoComplete="new-password"
                     value={pwdNew}
-                    onChange={(e) => setPwdNew(e.target.value)}
+                    onChange={(e) => setPwdNew(sanitizePasswordInput(e.target.value))}
+                    maxLength={128}
                   />
                 </div>
                 <button

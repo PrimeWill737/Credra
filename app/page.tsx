@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { ClientWorkspaceCta } from "./components/ClientWorkspaceCta";
 import { CredraLogo } from "./components/CredraLogo";
 import { HeroMegaCard } from "./components/HeroMegaCard";
 import { Reveal } from "./components/Reveal";
@@ -31,9 +32,12 @@ export default function HomePage() {
                 earn and spend.
               </p>
               <div className="hero-mega__actions">
-                <a className="btn btn--primary" href="/client">
-                  Request access
-                </a>
+                <ClientWorkspaceCta
+                  className="btn btn--primary"
+                  href="/client"
+                  loggedOutLabel="Request access"
+                  loggedInLabel="Dashboard"
+                />
                 <a className="btn btn--ghost" href="#product">
                   What you ship
                 </a>
