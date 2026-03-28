@@ -1,0 +1,34 @@
+@use "../../styles/scss/variables" as *;
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 251, 239, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.spinner {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 3px solid rgba(10, 37, 64, 0.12);
+  border-top-color: $color-electric-purple;
+  border-radius: 50%;
+  animation: credraSpin 0.75s linear infinite;
+}
+
+@keyframes credraSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: rgba(10, 37, 64, 0.35);
+  }
+}

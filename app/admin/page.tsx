@@ -3,6 +3,13 @@
 import Connect from "@mono.co/connect.js";
 import { FormEvent, useCallback, useMemo, useRef, useState } from "react";
 import { CredraLogo } from "../components/CredraLogo";
+import { FlashNotices } from "../components/FlashNotices";
+import { LoadingOverlay } from "../components/LoadingOverlay";
+import {
+  humanizeAdminError,
+  humanizeApiSlug,
+  humanizeMonoForUser,
+} from "../lib/userFacingMessages";
 import { AdminUsageChart } from "./AdminUsageChart";
 import styles from "./admin.module.scss";
 
@@ -73,36 +80,12 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
 const MONO_PUBLIC_KEY = process.env.NEXT_PUBLIC_MONO_PUBLIC_KEY ?? "";
 
-const API_ORIGIN =
-  process.env.NEXT_PUBLIC_API_ORIGIN ??
-  (API_BASE.replace(/\/api\/v1\/?$/, "") || "http://localhost:4000");
-
 function isLikelyNetworkFailure(err: unknown): boolean {
   if (err instanceof TypeError) return true;
   if (err instanceof Error && /failed to fetch|networkerror|load failed/i.test(err.message)) {
     return true;
   }
   return false;
-}
-
-function isLocalApiOrigin(): boolean {
-  try {
-    const u = new URL(API_ORIGIN);
-    return u.hostname === "localhost" || u.hostname === "127.0.0.1";
-  } catch {
-    return false;
-  }
-}
-
-function networkFailureHint(): string {
-  if (isLocalApiOrigin()) {
-    return `Cannot reach the API (${API_ORIGIN}). Start the backend locally: cd backend && npm install && npm run dev — then open ${API_ORIGIN}/health`;
-  }
-  return [
-    `Cannot reach the API (${API_ORIGIN}).`,
-    `Open ${API_ORIGIN}/health or ${API_ORIGIN}/api/v1/health in a new tab — you should see JSON {"ok":true,...}. If you get HTML "Not found", the Render service may be the wrong app (root directory must be backend) or needs redeploy.`,
-    `If health returns JSON but this page still fails, check CORS and redeploy the frontend after setting NEXT_PUBLIC_API_BASE_URL and NEXT_PUBLIC_API_ORIGIN.`,
-  ].join(" ");
 }
 
 function authHeaders(token: string): HeadersInit {
@@ -172,7 +155,8 @@ export default function AdminPage() {
   const [token, setToken] = useState("");
   const [adminName, setAdminName] = useState("");
   const [panel, setPanel] = useState<PanelResponse | null>(null);
-  const [error, setError] = useState("");
+  const [flashError, setFlashError] = useState("");
+  const [flashSuccess, setFlashSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("overview");
 
@@ -184,7 +168,6 @@ export default function AdminPage() {
   const [monoExchange, setMonoExchange] = useState<Record<string, unknown> | null>(null);
   const [monoBalance, setMonoBalance] = useState<Record<string, unknown> | null>(null);
   const [monoTransactions, setMonoTransactions] = useState<Array<Record<string, unknown>>>([]);
-  const [monoError, setMonoError] = useState("");
   const [transferBusy, setTransferBusy] = useState<number | null>(null);
 
   const activeMeta = useMemo(
@@ -201,7 +184,7 @@ export default function AdminPage() {
       },
     });
     if (!response.ok) {
-      throw new Error("Unable to fetch admin panel data.");
+      throw new Error("panel_load_failed");
     }
     const data = (await response.json()) as PanelResponse;
     setPanel(data);
@@ -211,7 +194,8 @@ export default function AdminPage() {
     async (id: number, action: "approve" | "reject") => {
       if (!token) return;
       setTransferBusy(id);
-      setError("");
+      setFlashError("");
+      setFlashSuccess("");
       try {
         const r = await fetch(`${API_BASE}/admin/client/transfers/${id}/${action}`, {
           method: "POST",
@@ -220,11 +204,16 @@ export default function AdminPage() {
         });
         if (!r.ok) {
           const b = (await r.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(typeof b?.error === "string" ? b.error : "Request failed");
+          throw new Error(typeof b?.error === "string" ? b.error : "request_failed");
         }
         await fetchPanelData(token);
+        setFlashSuccess(
+          action === "approve" ? "Payment approved. Their access is now active." : "Request declined.",
+        );
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Transfer action failed");
+        setFlashError(
+          humanizeApiSlug(err instanceof Error ? err.message : "request_failed"),
+        );
       } finally {
         setTransferBusy(null);
       }
@@ -253,14 +242,13 @@ export default function AdminPage() {
   }, [token]);
 
   const openMonoConnect = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoBalance(null);
     setMonoTransactions([]);
 
     if (!MONO_PUBLIC_KEY) {
-      setMonoError(
-        "Missing NEXT_PUBLIC_MONO_PUBLIC_KEY. Add it in frontend/.env.local and restart the frontend.",
-      );
+      setFlashError(humanizeMonoForUser("missing public key", "connect"));
       return;
     }
 
@@ -270,14 +258,20 @@ export default function AdminPage() {
         onSuccess: async (payload: { code?: string }) => {
           const code = String(payload?.code ?? "");
           if (!code) {
-            setMonoError("Mono returned no auth code.");
+            setFlashError(humanizeMonoForUser("no auth code", "connect"));
             return;
           }
           setMonoCode(code);
           try {
             await exchangeMonoCodeForAccount(code);
+            setFlashSuccess("Bank linked successfully.");
           } catch (e) {
-            setMonoError(e instanceof Error ? e.message : "Mono exchange failed.");
+            setFlashError(
+              humanizeMonoForUser(
+                e instanceof Error ? e.message : "exchange failed",
+                "connect",
+              ),
+            );
           }
         },
         onClose: () => {
@@ -291,10 +285,11 @@ export default function AdminPage() {
   }, [exchangeMonoCodeForAccount]);
 
   const fetchMonoBalance = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoBalance(null);
     if (!monoAccountId) {
-      setMonoError("No account id yet. Connect an account first.");
+      setFlashError(humanizeMonoForUser("connect first", "balance"));
       return;
     }
     const response = await fetch(
@@ -303,18 +298,20 @@ export default function AdminPage() {
     );
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
-      const msg = typeof body?.error === "string" ? body.error : "Failed to fetch balance.";
-      setMonoError(msg);
+      const msg = typeof body?.error === "string" ? body.error : "balance_failed";
+      setFlashError(humanizeMonoForUser(msg, "balance"));
       return;
     }
     setMonoBalance(body ?? {});
+    setFlashSuccess("Balance updated.");
   }, [monoAccountId, token]);
 
   const fetchMonoTransactions = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoTransactions([]);
     if (!monoAccountId) {
-      setMonoError("No account id yet. Connect an account first.");
+      setFlashError(humanizeMonoForUser("connect first", "transactions"));
       return;
     }
     const response = await fetch(
@@ -323,12 +320,13 @@ export default function AdminPage() {
     );
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
-      const msg = typeof body?.error === "string" ? body.error : "Failed to fetch transactions.";
-      setMonoError(msg);
+      const msg = typeof body?.error === "string" ? body.error : "transactions_failed";
+      setFlashError(humanizeMonoForUser(msg, "transactions"));
       return;
     }
     const arr = (body?.data as unknown) ?? [];
     setMonoTransactions(Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : []);
+    setFlashSuccess("Transactions loaded.");
   }, [monoAccountId, token]);
 
   async function downloadExport(path: string, filename: string, authToken: string) {
@@ -354,7 +352,8 @@ export default function AdminPage() {
   async function onLogin(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const response = await fetch(`${API_BASE}/admin/auth/login`, {
         method: "POST",
@@ -392,7 +391,12 @@ export default function AdminPage() {
       setPendingToken("");
       await fetchPanelData(access);
     } catch (err) {
-      setError(isLikelyNetworkFailure(err) ? networkFailureHint() : err instanceof Error ? err.message : "Unable to login.");
+      setFlashError(
+        humanizeAdminError(
+          err instanceof Error ? err.message : "",
+          isLikelyNetworkFailure(err),
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -401,7 +405,8 @@ export default function AdminPage() {
   async function onTotpSubmit(event: FormEvent) {
     event.preventDefault();
     setLoading(true);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const response = await fetch(`${API_BASE}/admin/auth/totp/verify`, {
         method: "POST",
@@ -423,12 +428,11 @@ export default function AdminPage() {
       setTotpCode("");
       await fetchPanelData(access);
     } catch (err) {
-      setError(
-        isLikelyNetworkFailure(err)
-          ? networkFailureHint()
-          : err instanceof Error
-            ? err.message
-            : "2FA verification failed.",
+      setFlashError(
+        humanizeAdminError(
+          err instanceof Error ? err.message : "",
+          isLikelyNetworkFailure(err),
+        ),
       );
     } finally {
       setLoading(false);
@@ -438,16 +442,17 @@ export default function AdminPage() {
   async function onRefresh() {
     if (!token) return;
     setLoading(true);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       await fetchPanelData(token);
+      setFlashSuccess("Everything is up to date.");
     } catch (err) {
-      setError(
-        isLikelyNetworkFailure(err)
-          ? networkFailureHint()
-          : err instanceof Error
-            ? err.message
-            : "Unable to refresh.",
+      setFlashError(
+        humanizeAdminError(
+          err instanceof Error ? err.message : "",
+          isLikelyNetworkFailure(err),
+        ),
       );
     } finally {
       setLoading(false);
@@ -456,7 +461,8 @@ export default function AdminPage() {
 
   async function onLogout() {
     setLoading(true);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       await fetch(`${API_BASE}/admin/auth/logout`, {
         method: "POST",
@@ -535,7 +541,6 @@ export default function AdminPage() {
                   Fetch transactions
                 </button>
               </div>
-              {monoError ? <p className={styles.error}>{monoError}</p> : null}
               <div className={styles.kvGrid}>
                 <div>
                   <div className={styles.kvLabel}>Auth code</div>
@@ -605,7 +610,22 @@ export default function AdminPage() {
                 type="button"
                 className={styles.exportBtn}
                 onClick={() =>
-                  downloadExport("/admin/exports/compliance.csv", "credra-compliance.csv", token)
+                  void (async () => {
+                    try {
+                      await downloadExport(
+                        "/admin/exports/compliance.csv",
+                        "credra-compliance.csv",
+                        token,
+                      );
+                      setFlashError("");
+                      setFlashSuccess("Your download should start shortly.");
+                    } catch {
+                      setFlashSuccess("");
+                      setFlashError(
+                        humanizeAdminError("Download failed.", false),
+                      );
+                    }
+                  })()
                 }
               >
                 Download compliance CSV
@@ -614,7 +634,22 @@ export default function AdminPage() {
                 type="button"
                 className={styles.exportBtn}
                 onClick={() =>
-                  downloadExport("/admin/exports/compliance.pdf", "credra-compliance.pdf", token)
+                  void (async () => {
+                    try {
+                      await downloadExport(
+                        "/admin/exports/compliance.pdf",
+                        "credra-compliance.pdf",
+                        token,
+                      );
+                      setFlashError("");
+                      setFlashSuccess("Your download should start shortly.");
+                    } catch {
+                      setFlashSuccess("");
+                      setFlashError(
+                        humanizeAdminError("Download failed.", false),
+                      );
+                    }
+                  })()
                 }
               >
                 Download compliance PDF
@@ -670,7 +705,7 @@ export default function AdminPage() {
                                   disabled={busy}
                                   onClick={() => void settleClientTransfer(rid, "approve")}
                                 >
-                                  {busy ? "…" : "Approve"}
+                                  Approve
                                 </button>
                                 <button
                                   type="button"
@@ -761,7 +796,15 @@ export default function AdminPage() {
 
   if (!isLoggedIn && awaitingTotp) {
     return (
-      <main className={styles.authWrap}>
+      <>
+        <FlashNotices
+          error={flashError}
+          success={flashSuccess}
+          onDismissError={() => setFlashError("")}
+          onDismissSuccess={() => setFlashSuccess("")}
+        />
+        <LoadingOverlay show={loading} />
+        <main className={styles.authWrap}>
         <form className={styles.authCard} onSubmit={onTotpSubmit}>
           <div className={styles.authLogo}>
             <CredraLogo height={40} />
@@ -783,9 +826,8 @@ export default function AdminPage() {
               required
             />
           </label>
-          {error ? <p className={styles.error}>{error}</p> : null}
           <button type="submit" disabled={loading}>
-            {loading ? "Verifying..." : "Verify & continue"}
+            Verify and continue
           </button>
           <button
             type="button"
@@ -795,19 +837,29 @@ export default function AdminPage() {
               setAwaitingTotp(false);
               setPendingToken("");
               setTotpCode("");
-              setError("");
+              setFlashError("");
+              setFlashSuccess("");
             }}
           >
             Back to login
           </button>
         </form>
       </main>
+      </>
     );
   }
 
   if (!isLoggedIn) {
     return (
-      <main className={styles.authWrap}>
+      <>
+        <FlashNotices
+          error={flashError}
+          success={flashSuccess}
+          onDismissError={() => setFlashError("")}
+          onDismissSuccess={() => setFlashSuccess("")}
+        />
+        <LoadingOverlay show={loading} />
+        <main className={styles.authWrap}>
         <form className={styles.authCard} onSubmit={onLogin}>
           <div className={styles.authLogo}>
             <CredraLogo height={40} />
@@ -836,17 +888,24 @@ export default function AdminPage() {
               required
             />
           </label>
-          {error ? <p className={styles.error}>{error}</p> : null}
           <button type="submit" disabled={loading}>
-            {loading ? "Signing in..." : "Login"}
+            Log in
           </button>
         </form>
       </main>
+      </>
     );
   }
 
   return (
     <main className={styles.page}>
+      <FlashNotices
+        error={flashError}
+        success={flashSuccess}
+        onDismissError={() => setFlashError("")}
+        onDismissSuccess={() => setFlashSuccess("")}
+      />
+      <LoadingOverlay show={loading} />
       <header className={styles.topBar}>
         <div className={styles.brandHeader}>
           <CredraLogo className={styles.brandLogo} height={36} />
@@ -859,16 +918,13 @@ export default function AdminPage() {
         </div>
         <div className={styles.headerActions}>
           <button type="button" onClick={onRefresh} disabled={loading}>
-            {loading ? "Refreshing…" : "Refresh data"}
+            Refresh data
           </button>
           <button type="button" className={styles.btnGhost} onClick={onLogout} disabled={loading}>
             Log out
           </button>
         </div>
       </header>
-
-      {error ? <p className={styles.bannerError}>{error}</p> : null}
-      {!panel ? <p className={styles.loadingBanner}>Loading panel…</p> : null}
 
       {panel ? (
         <>

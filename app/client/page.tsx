@@ -3,8 +3,15 @@
 import Connect from "@mono.co/connect.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CredraLogo } from "../components/CredraLogo";
+import { FlashNotices } from "../components/FlashNotices";
+import { LoadingOverlay } from "../components/LoadingOverlay";
 import { SignupSuccess } from "../components/SignupSuccess";
 import { ClientAiInsight, type AiEndpointKind } from "./ClientAiInsight";
+import {
+  humanizeApiSlug,
+  humanizeMonoForUser,
+  humanizeNetworkFailure,
+} from "../lib/userFacingMessages";
 import { PLAN_CARDS, type PlanCard } from "./planCatalog";
 import styles from "./client.module.scss";
 
@@ -141,15 +148,15 @@ function MonoExchangeSummary({
     return (
       <div className={styles.exchangeSummary}>
         <p className={styles.exchangeSummaryLead}>
-          Simulated link — the server did not call Mono (missing secret key or
-          local dev stub).
+          This is a practice bank link so you can try the flow without a live
+          connection.
         </p>
         {typeof payload.message === "string" ? (
           <p className={styles.exchangeSummaryNote}>{payload.message}</p>
         ) : null}
         {accountId ? (
           <p className={styles.exchangeSummaryNote}>
-            <strong>Practice account id:</strong> {accountId}
+            Practice reference: {accountId}
           </p>
         ) : null}
       </div>
@@ -249,6 +256,8 @@ function humanizeAuthError(message: string): string {
   const key = m.toLowerCase();
 
   const direct: Record<string, string> = {
+    invalid_numbers: "Please enter valid numbers in all fields.",
+    dashboard_load_failed: "We couldn't load your workspace. Refresh the page or try again shortly.",
     missing_required_fields: "Please fill out all required fields.",
     email_already_registered:
       "That email is already registered. Please log in instead.",
@@ -262,6 +271,11 @@ function humanizeAuthError(message: string): string {
     otp_expired: "That code has expired. Request a new one.",
     email_and_password_required: "Please enter your email and password.",
     invalid_credentials: "Incorrect email or password. Please try again.",
+    login_incomplete: "Sign-in didn't finish. Please try again.",
+    "otp required but missing.":
+      "We couldn't start the verification step. Please try again.",
+    "missing token/apikey after otp verification.":
+      "We couldn't finish setting up your account. Please try signing up again.",
   };
 
   if (direct[key]) return direct[key];
@@ -272,9 +286,13 @@ function humanizeAuthError(message: string): string {
     return direct["email_already_registered"];
   if (key.includes("invalid_credentials")) return direct["invalid_credentials"];
 
-  if (/network/i.test(m))
-    return "Couldn't reach the server. Check your connection and try again.";
-  return m || "Something went wrong. Please try again.";
+  if (/network|failed to fetch|load failed/i.test(m))
+    return humanizeNetworkFailure();
+  if (/^[a-z0-9_]+$/.test(key) && key.length > 2) {
+    return humanizeApiSlug(m);
+  }
+  if (m.length > 0 && m.length < 160 && !m.includes("_")) return m;
+  return "Something went wrong. Please try again.";
 }
 
 export default function ClientDashboardPage() {
@@ -283,7 +301,8 @@ export default function ClientDashboardPage() {
   const [me, setMe] = useState<ClientMeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [loginSubmitting, setLoginSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [flashError, setFlashError] = useState("");
+  const [flashSuccess, setFlashSuccess] = useState("");
 
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
@@ -293,7 +312,6 @@ export default function ClientDashboardPage() {
   const [signupOtp, setSignupOtp] = useState("");
   const [pendingSignupToken, setPendingSignupToken] = useState("");
   const [awaitingOtp, setAwaitingOtp] = useState(false);
-  const [otpNotice, setOtpNotice] = useState("");
   const [signupSuccess, setSignupSuccess] = useState(false);
   const [signupSuccessToken, setSignupSuccessToken] = useState("");
   const [signupSuccessApiKey, setSignupSuccessApiKey] = useState("");
@@ -326,14 +344,11 @@ export default function ClientDashboardPage() {
   const [monoTransactions, setMonoTransactions] = useState<
     Array<Record<string, unknown>>
   >([]);
-  const [monoError, setMonoError] = useState("");
-
   const [monthlyIncome, setMonthlyIncome] = useState("4500");
   const [monthlySpend, setMonthlySpend] = useState("3800");
   const [txCount, setTxCount] = useState("42");
   const [volatilityHint, setVolatilityHint] = useState("0.25");
   const [playgroundLoading, setPlaygroundLoading] = useState(false);
-  const [playgroundError, setPlaygroundError] = useState("");
   const [playgroundData, setPlaygroundData] = useState<Record<
     string,
     unknown
@@ -349,14 +364,28 @@ export default function ClientDashboardPage() {
   const [pwdCurrent, setPwdCurrent] = useState("");
   const [pwdNew, setPwdNew] = useState("");
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
-  const [pwdMsg, setPwdMsg] = useState("");
-  const [pwdErr, setPwdErr] = useState("");
 
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
-  const [cancelMsg, setCancelMsg] = useState("");
-  const [cancelErr, setCancelErr] = useState("");
 
   const hasSession = useMemo(() => token.length > 0, [token]);
+
+  const showLoadingOverlay = useMemo(
+    () =>
+      (!hasSession && (loading || loginSubmitting)) ||
+      (hasSession &&
+        (loading ||
+          pwdSubmitting ||
+          cancelSubmitting ||
+          playgroundLoading)),
+    [
+      hasSession,
+      loading,
+      loginSubmitting,
+      pwdSubmitting,
+      cancelSubmitting,
+      playgroundLoading,
+    ],
+  );
 
   useEffect(() => {
     const savedToken = localStorage.getItem("credra_client_token") ?? "";
@@ -394,14 +423,13 @@ export default function ClientDashboardPage() {
   }, []);
 
   const openMonoConnect = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoBalance(null);
     setMonoTransactions([]);
 
     if (!MONO_PUBLIC_KEY) {
-      setMonoError(
-        "Add NEXT_PUBLIC_MONO_PUBLIC_KEY in frontend/.env.local to enable bank connection.",
-      );
+      setFlashError(humanizeMonoForUser("missing public key", "connect"));
       return;
     }
 
@@ -411,15 +439,19 @@ export default function ClientDashboardPage() {
         onSuccess: async (payload: { code?: string }) => {
           const code = String(payload?.code ?? "");
           if (!code) {
-            setMonoError("Mono returned no auth code.");
+            setFlashError(humanizeMonoForUser("no auth code", "connect"));
             return;
           }
           setMonoCode(code);
           try {
             await exchangeMonoCodeForAccount(code);
+            setFlashSuccess("Bank linked successfully.");
           } catch (e) {
-            setMonoError(
-              e instanceof Error ? e.message : "Mono exchange failed.",
+            setFlashError(
+              humanizeMonoForUser(
+                e instanceof Error ? e.message : "exchange failed",
+                "connect",
+              ),
             );
           }
         },
@@ -434,10 +466,11 @@ export default function ClientDashboardPage() {
   }, [exchangeMonoCodeForAccount]);
 
   const fetchMonoBalance = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoBalance(null);
     if (!monoAccountId) {
-      setMonoError("Connect a bank account first.");
+      setFlashError(humanizeMonoForUser("connect first", "balance"));
       return;
     }
     const response = await fetch(
@@ -449,20 +482,20 @@ export default function ClientDashboardPage() {
     > | null;
     if (!response.ok) {
       const msg =
-        typeof body?.error === "string"
-          ? body.error
-          : "Failed to fetch balance.";
-      setMonoError(msg);
+        typeof body?.error === "string" ? body.error : "balance_failed";
+      setFlashError(humanizeMonoForUser(msg, "balance"));
       return;
     }
     setMonoBalance(body ?? {});
+    setFlashSuccess("Balance updated.");
   }, [monoAccountId]);
 
   const fetchMonoTransactions = useCallback(async () => {
-    setMonoError("");
+    setFlashError("");
+    setFlashSuccess("");
     setMonoTransactions([]);
     if (!monoAccountId) {
-      setMonoError("Connect a bank account first.");
+      setFlashError(humanizeMonoForUser("connect first", "transactions"));
       return;
     }
     const response = await fetch(
@@ -474,23 +507,23 @@ export default function ClientDashboardPage() {
     > | null;
     if (!response.ok) {
       const msg =
-        typeof body?.error === "string"
-          ? body.error
-          : "Failed to fetch transactions.";
-      setMonoError(msg);
+        typeof body?.error === "string" ? body.error : "transactions_failed";
+      setFlashError(humanizeMonoForUser(msg, "transactions"));
       return;
     }
     const arr = (body?.data as unknown) ?? [];
     setMonoTransactions(
       Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [],
     );
+    setFlashSuccess("Transactions loaded.");
   }, [monoAccountId]);
 
   const runPlayground = useCallback(
     async (path: PlaygroundPath) => {
       if (!token) return;
       setPlaygroundLoading(true);
-      setPlaygroundError("");
+      setFlashError("");
+      setFlashSuccess("");
       setPlaygroundData(null);
       setPlaygroundKind(null);
       try {
@@ -504,7 +537,7 @@ export default function ClientDashboardPage() {
           !Number.isFinite(tx_count) ||
           !Number.isFinite(volatility_hint)
         ) {
-          throw new Error("Enter valid numbers for all fields.");
+          throw new Error("invalid_numbers");
         }
         const r = await fetch(`${API_BASE}/client/playground/${path}`, {
           method: "POST",
@@ -528,7 +561,9 @@ export default function ClientDashboardPage() {
         setPlaygroundData(data);
         setPlaygroundKind(pathToInsightKind(path));
       } catch (e) {
-        setPlaygroundError(e instanceof Error ? e.message : "Playground error");
+        setFlashError(
+          humanizeAuthError(e instanceof Error ? e.message : "playground_error"),
+        );
       } finally {
         setPlaygroundLoading(false);
       }
@@ -543,18 +578,23 @@ export default function ClientDashboardPage() {
 
     void (async () => {
       setLoading(true);
-      setError("");
+      setFlashError("");
       try {
         const r = await fetch(`${API_BASE}/client/me`, {
           headers: { "Content-Type": "application/json", ...authz(token) },
         });
         if (cancelled) return;
-        if (!r.ok) throw new Error("Unable to load dashboard.");
+        if (!r.ok) throw new Error("dashboard_load_failed");
         const data = (await r.json()) as ClientMeResponse;
         if (!cancelled) setMe(data);
       } catch (e) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Dashboard error");
+        if (!cancelled) {
+          setFlashError(
+            humanizeAuthError(
+              e instanceof Error ? e.message : "dashboard_load_failed",
+            ),
+          );
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -569,8 +609,8 @@ export default function ClientDashboardPage() {
 
   async function onSignup() {
     setLoading(true);
-    setError("");
-    setOtpNotice("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const r = await fetch(`${API_BASE}/client/auth/signup`, {
         method: "POST",
@@ -590,14 +630,15 @@ export default function ClientDashboardPage() {
         setAwaitingOtp(true);
         setPendingSignupToken(String(body.pendingToken));
         setSignupOtp("");
-        setOtpNotice(
-          `We emailed a 6-digit code to ${String(signupEmail || "").trim()}. It expires in 10 minutes. Enter it below to finish signing up.`,
+        setFlashSuccess(
+          `We sent a 6-digit code to ${String(signupEmail || "").trim()}. It expires in 10 minutes — enter it below to finish.`,
         );
         return;
       }
       throw new Error("OTP required but missing.");
     } catch (e) {
-      setError(
+      setFlashSuccess("");
+      setFlashError(
         humanizeAuthError(e instanceof Error ? e.message : "Signup error"),
       );
     } finally {
@@ -607,8 +648,8 @@ export default function ClientDashboardPage() {
 
   async function verifySignupOtp() {
     setLoading(true);
-    setError("");
-    setOtpNotice("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const r = await fetch(`${API_BASE}/client/auth/otp/verify`, {
         method: "POST",
@@ -637,7 +678,9 @@ export default function ClientDashboardPage() {
       setSignupSuccessApiKey(newKey);
       setSignupSuccess(true);
     } catch (e) {
-      setError(humanizeAuthError(e instanceof Error ? e.message : "OTP error"));
+      setFlashError(
+        humanizeAuthError(e instanceof Error ? e.message : "OTP error"),
+      );
     } finally {
       setLoading(false);
     }
@@ -645,7 +688,7 @@ export default function ClientDashboardPage() {
 
   async function resendSignupOtp() {
     setLoading(true);
-    setError("");
+    setFlashError("");
     try {
       const r = await fetch(`${API_BASE}/client/auth/otp/resend`, {
         method: "POST",
@@ -657,11 +700,12 @@ export default function ClientDashboardPage() {
         const msg = body?.error ? String(body.error) : "Resend failed";
         throw new Error(msg);
       }
-      setOtpNotice(
-        `We emailed a new 6-digit code to ${String(signupEmail || "").trim()}. It expires in 10 minutes.`,
+      setFlashSuccess(
+        `We sent a new code to ${String(signupEmail || "").trim()}. It expires in 10 minutes.`,
       );
     } catch (e) {
-      setError(
+      setFlashSuccess("");
+      setFlashError(
         humanizeAuthError(e instanceof Error ? e.message : "Resend error"),
       );
     } finally {
@@ -672,8 +716,8 @@ export default function ClientDashboardPage() {
   async function onLogin() {
     setLoginSubmitting(true);
     setLoading(true);
-    setError("");
-    setOtpNotice("");
+    setFlashError("");
+    setFlashSuccess("");
     setLoginSuccess(false);
     try {
       const r = await fetch(`${API_BASE}/client/auth/login`, {
@@ -689,13 +733,13 @@ export default function ClientDashboardPage() {
       const newToken = String(body?.token ?? "");
       const accountName = String(body?.account?.company_name ?? "").trim();
 
-      if (!newToken) throw new Error("Missing token after login.");
+      if (!newToken) throw new Error("login_incomplete");
 
       setLoginSuccessToken(newToken);
       setLoginSuccessName(accountName);
       setLoginSuccess(true);
     } catch (e) {
-      setError(
+      setFlashError(
         humanizeAuthError(e instanceof Error ? e.message : "Login error"),
       );
     } finally {
@@ -707,7 +751,8 @@ export default function ClientDashboardPage() {
   async function submitTransfer() {
     if (!token) return;
     setLoading(true);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const r = await fetch(`${API_BASE}/client/subscription/transfer`, {
         method: "POST",
@@ -734,8 +779,13 @@ export default function ClientDashboardPage() {
       const data = (await meR.json()) as ClientMeResponse;
       setMe(data);
       setTransactionReference("");
+      setFlashSuccess(
+        "Thanks — we received your reference. We'll review it shortly.",
+      );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Transfer error");
+      setFlashError(
+        humanizeAuthError(e instanceof Error ? e.message : "Transfer error"),
+      );
     } finally {
       setLoading(false);
     }
@@ -758,8 +808,8 @@ export default function ClientDashboardPage() {
   async function changePassword() {
     if (!token) return;
     setPwdSubmitting(true);
-    setPwdErr("");
-    setPwdMsg("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const r = await fetch(`${API_BASE}/client/auth/password`, {
         method: "POST",
@@ -775,7 +825,7 @@ export default function ClientDashboardPage() {
           typeof body.error === "string" ? body.error : "password_change_failed",
         );
       }
-      setPwdMsg("Password updated successfully.");
+      setFlashSuccess("Your password was updated.");
       setPwdCurrent("");
       setPwdNew("");
     } catch (e) {
@@ -783,10 +833,10 @@ export default function ClientDashboardPage() {
       const map: Record<string, string> = {
         invalid_password_fields:
           "Enter your current password and a new password (at least 8 characters).",
-        invalid_current_password: "Current password is incorrect.",
-        password_change_failed: "Could not update password. Try again.",
+        invalid_current_password: "That current password isn't correct.",
+        password_change_failed: "We couldn't update your password. Try again.",
       };
-      setPwdErr(map[key] ?? key);
+      setFlashError(map[key] ?? humanizeApiSlug(key));
     } finally {
       setPwdSubmitting(false);
     }
@@ -799,8 +849,8 @@ export default function ClientDashboardPage() {
     );
     if (!ok) return;
     setCancelSubmitting(true);
-    setCancelErr("");
-    setCancelMsg("");
+    setFlashError("");
+    setFlashSuccess("");
     try {
       const r = await fetch(`${API_BASE}/client/subscription/cancel`, {
         method: "POST",
@@ -812,7 +862,7 @@ export default function ClientDashboardPage() {
           typeof body.error === "string" ? body.error : "cancel_failed",
         );
       }
-      setCancelMsg("Your subscription has been cancelled.");
+      setFlashSuccess("Your subscription is cancelled.");
       const meR = await fetch(`${API_BASE}/client/me`, {
         headers: { "Content-Type": "application/json", ...authz(token) },
       });
@@ -823,7 +873,7 @@ export default function ClientDashboardPage() {
         subscription_not_cancellable: "There is no active subscription to cancel.",
         cancel_failed: "Could not cancel. Try again or contact support.",
       };
-      setCancelErr(map[key] ?? key);
+      setFlashError(map[key] ?? humanizeApiSlug(key));
     } finally {
       setCancelSubmitting(false);
     }
@@ -832,7 +882,8 @@ export default function ClientDashboardPage() {
   function onLogout() {
     setToken("");
     setMe(null);
-    setError("");
+    setFlashError("");
+    setFlashSuccess("");
     setLoading(false);
     setLoginSubmitting(false);
     localStorage.removeItem("credra_client_token");
@@ -845,6 +896,7 @@ export default function ClientDashboardPage() {
   if (signupSuccess) {
     return (
       <SignupSuccess
+        subtitle="Your account is ready. Opening your workspace."
         onDone={() => {
           setToken(signupSuccessToken);
           setApiKey(signupSuccessApiKey);
@@ -864,7 +916,7 @@ export default function ClientDashboardPage() {
             ? `Welcome back, ${loginSuccessName}`
             : "Welcome back"
         }
-        subtitle="Redirecting you to your dashboard…"
+        subtitle="Opening your workspace."
         onDone={() => {
           setToken(loginSuccessToken);
           localStorage.setItem("credra_client_token", loginSuccessToken);
@@ -878,6 +930,13 @@ export default function ClientDashboardPage() {
     <main
       className={`${styles.page} ${hasSession ? styles.pageDash : styles.pageGate}`}
     >
+      <FlashNotices
+        error={flashError}
+        success={flashSuccess}
+        onDismissError={() => setFlashError("")}
+        onDismissSuccess={() => setFlashSuccess("")}
+      />
+      <LoadingOverlay show={showLoadingOverlay} />
       <div className={styles.ambient} aria-hidden />
       <header className={hasSession ? styles.topBar : styles.centerTopBar}>
         <div
@@ -913,13 +972,6 @@ export default function ClientDashboardPage() {
 
       {!hasSession ? (
         <div className={styles.centerStage}>
-          {error ? (
-            <p className={styles.error} role="alert" aria-live="polite">
-              {error}
-            </p>
-          ) : null}
-          {loading ? <p className={styles.loading}>Loading…</p> : null}
-
           <div className={styles.singleWrap}>
             {authMode === "login" ? (
               <section className={styles.card}>
@@ -949,7 +1001,7 @@ export default function ClientDashboardPage() {
                   disabled={loginSubmitting || loading}
                   aria-busy={loginSubmitting}
                 >
-                  {loginSubmitting ? "Logging in..." : "Log in"}
+                  Log in
                 </button>
 
                 <p className={styles.switchLine}>
@@ -997,16 +1049,12 @@ export default function ClientDashboardPage() {
                 </div>
                 {awaitingOtp ? (
                   <>
-                    {otpNotice ? (
-                      <p className={styles.success}>{otpNotice}</p>
-                    ) : (
-                      <p className={styles.success}>
-                        Enter the 6-digit code we emailed you. It expires in 10
-                        minutes.
-                      </p>
-                    )}
+                    <p className={styles.muted}>
+                      Enter the 6-digit code from your email. It expires in 10
+                      minutes.
+                    </p>
                     <div className={styles.field}>
-                      <label>OTP code</label>
+                      <label>Verification code</label>
                       <input
                         value={signupOtp}
                         onChange={(e) => setSignupOtp(e.target.value)}
@@ -1021,7 +1069,7 @@ export default function ClientDashboardPage() {
                       onClick={verifySignupOtp}
                       disabled={loading || !signupOtp.trim()}
                     >
-                      {loading ? "Verifying…" : "Verify OTP"}
+                      Verify code
                     </button>
                     <button
                       type="button"
@@ -1039,7 +1087,7 @@ export default function ClientDashboardPage() {
                     onClick={onSignup}
                     disabled={loading}
                   >
-                    {loading ? "Signing up…" : "Create account"}
+                    Create account
                   </button>
                 )}
 
@@ -1076,15 +1124,6 @@ export default function ClientDashboardPage() {
           </aside>
 
           <div className={styles.dashMain}>
-            {error ? (
-              <p className={styles.error} role="alert">
-                {error}
-              </p>
-            ) : null}
-            {loading && !me ? (
-              <p className={styles.loading}>Loading your workspace…</p>
-            ) : null}
-
             {activeNav === "dashboard" ? (
               <>
                 <section className={styles.heroCard}>
@@ -1150,12 +1189,7 @@ export default function ClientDashboardPage() {
 
             {activeNav === "credra-ai" ? (
               <>
-                <section
-                  ref={transferSectionRef}
-                  className={styles.panel}
-                  tabIndex={-1}
-                  aria-label="Pay via bank transfer"
-                >
+                <section className={styles.panel}>
                   <div className={styles.panelHead}>
                     <h3 className={styles.subTitle}>Live sandbox</h3>
                     <p className={styles.muted}>
@@ -1209,7 +1243,7 @@ export default function ClientDashboardPage() {
                       onClick={() => void runPlayground("score")}
                       disabled={playgroundLoading}
                     >
-                      {playgroundLoading ? "Running…" : "Credit score"}
+                      Credit score
                     </button>
                     <button
                       type="button"
@@ -1217,7 +1251,7 @@ export default function ClientDashboardPage() {
                       onClick={() => void runPlayground("fraud-check")}
                       disabled={playgroundLoading}
                     >
-                      {playgroundLoading ? "Running…" : "Fraud check"}
+                      Fraud check
                     </button>
                     <button
                       type="button"
@@ -1225,7 +1259,7 @@ export default function ClientDashboardPage() {
                       onClick={() => void runPlayground("risk-analysis")}
                       disabled={playgroundLoading}
                     >
-                      {playgroundLoading ? "Running…" : "Risk analysis"}
+                      Risk analysis
                     </button>
                     <button
                       type="button"
@@ -1241,11 +1275,6 @@ export default function ClientDashboardPage() {
                       Sample inputs
                     </button>
                   </div>
-                  {playgroundError ? (
-                    <p className={styles.error} role="alert">
-                      {playgroundError}
-                    </p>
-                  ) : null}
                   {playgroundData && playgroundKind ? (
                     <ClientAiInsight
                       kind={playgroundKind}
@@ -1288,11 +1317,6 @@ export default function ClientDashboardPage() {
                       Fetch transactions
                     </button>
                   </div>
-                  {monoError ? (
-                    <p className={styles.error} role="alert">
-                      {monoError}
-                    </p>
-                  ) : null}
                   <div className={styles.monoMeta}>
                     <div>
                       <div className={styles.kvLabel}>Auth code</div>
@@ -1484,7 +1508,12 @@ export default function ClientDashboardPage() {
                   </div>
                 </section>
 
-                <section className={styles.panel}>
+                <section
+                  ref={transferSectionRef}
+                  className={styles.panel}
+                  tabIndex={-1}
+                  aria-label="Pay via bank transfer"
+                >
                   <h3 className={styles.subTitle}>Pay via bank transfer</h3>
                   <p className={styles.muted}>
                     Send payment to the receiving details below, then submit your
@@ -1564,7 +1593,7 @@ export default function ClientDashboardPage() {
                     onClick={submitTransfer}
                     disabled={loading || !transactionReference.trim()}
                   >
-                    {loading ? "Submitting…" : "Submit transfer reference"}
+                    Submit transfer reference
                   </button>
 
                   {me?.latestTransfer ? (
@@ -1622,12 +1651,6 @@ export default function ClientDashboardPage() {
                 <p className={styles.muted}>
                   Use a strong password you do not reuse elsewhere.
                 </p>
-                {pwdMsg ? <p className={styles.success}>{pwdMsg}</p> : null}
-                {pwdErr ? (
-                  <p className={styles.error} role="alert">
-                    {pwdErr}
-                  </p>
-                ) : null}
                 <div className={styles.field}>
                   <label>Current password</label>
                   <input
@@ -1654,7 +1677,7 @@ export default function ClientDashboardPage() {
                     pwdSubmitting || !pwdCurrent.trim() || pwdNew.length < 8
                   }
                 >
-                  {pwdSubmitting ? "Saving…" : "Update password"}
+                  Update password
                 </button>
 
                 <div className={styles.dangerZone}>
@@ -1663,21 +1686,13 @@ export default function ClientDashboardPage() {
                     This revokes API keys and marks your account as cancelled.
                     You can sign up again later if needed.
                   </p>
-                  {cancelMsg ? (
-                    <p className={styles.success}>{cancelMsg}</p>
-                  ) : null}
-                  {cancelErr ? (
-                    <p className={styles.error} role="alert">
-                      {cancelErr}
-                    </p>
-                  ) : null}
                   <button
                     type="button"
                     className={styles.dangerBtn}
                     onClick={() => void cancelSubscription()}
                     disabled={cancelSubmitting}
                   >
-                    {cancelSubmitting ? "Cancelling…" : "Cancel subscription"}
+                    Cancel subscription
                   </button>
                 </div>
               </section>
