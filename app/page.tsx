@@ -243,8 +243,8 @@ export default function HomePage() {
                   partners plug into—so you can move fast without stepping outside your
                   regulatory lane.
                 </p>
-                <a className="btn btn--primary" href="mailto:hello@credra.io">
-                  hello@credra.io
+                <a className="btn btn--primary" href="mailto:williambosworth777@icloud.com">
+                  williambosworth777@icloud.com
                 </a>
                 <p className="cta-final__fine">
                   Tell us what you’re underwriting and what “good” looks like for your
