@@ -17,7 +17,11 @@ export const PLAN_CARDS: PlanCard[] = [
     cycle: "weekly",
     amountNgn: 2000,
     durationLabel: "1 week",
-    features: ["Sandbox + limited API calls", "Email support", "Mono test linking"],
+    features: [
+      "Live sandbox (no production API access)",
+      "Bank linking test flow (Mono)",
+      "Email support",
+    ],
   },
   {
     id: "pro",
@@ -26,7 +30,11 @@ export const PLAN_CARDS: PlanCard[] = [
     cycle: "monthly",
     amountNgn: 25000,
     durationLabel: "1 month",
-    features: ["Production API", "Usage logging", "Priority review queue"],
+    features: [
+      "Production API key included",
+      "Limited to 5 production API calls per plan period",
+      "Usage logging + priority review queue",
+    ],
   },
   {
     id: "enterprise",
@@ -35,6 +43,11 @@ export const PLAN_CARDS: PlanCard[] = [
     cycle: "yearly",
     amountNgn: 270000,
     durationLabel: "1 year",
-    features: ["Everything in Pro", "Yearly invoicing", "Dedicated success check-ins"],
+    features: [
+      "Production API key included",
+      "Limited to 100 production API calls per year",
+      "Extend usage: +100 calls for +10% of original annual cost per extension",
+      "Yearly invoicing + dedicated success check-ins",
+    ],
   },
 ];

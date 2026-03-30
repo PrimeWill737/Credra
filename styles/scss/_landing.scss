@@ -1187,6 +1187,112 @@
   }
 }
 
+// --- Packages --------------------------------------------------------------
+.packages-panel {
+  scroll-margin-top: clamp(4.25rem, 16vw, 6rem);
+  @include container;
+  padding-block: clamp(2.5rem, 6vw, 3.5rem);
+}
+
+.packages-panel__head {
+  max-width: 52rem;
+  margin-bottom: clamp(1.25rem, 3.5vw, 2.25rem);
+}
+
+.packages-panel__title {
+  font-family: $font-heading;
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.65rem;
+  color: $color-deep-blue;
+  text-wrap: balance;
+}
+
+.packages-panel__lede {
+  margin: 0;
+  font-size: clamp(0.95rem, 2.4vw, 1.05rem);
+  line-height: 1.7;
+  color: rgba(10, 37, 64, 0.62);
+}
+
+.packages-panel__grid {
+  display: grid;
+  gap: 1rem;
+
+  @media (min-width: 680px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (min-width: 1024px) {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.packages-card {
+  background: $color-white;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: 1.35rem 1.25rem 1.4rem;
+  min-height: 100%;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+
+  &:hover {
+    border-color: rgba(108, 92, 231, 0.35);
+    box-shadow: 0 14px 36px rgba(10, 37, 64, 0.08);
+  }
+}
+
+.packages-card__name {
+  font-family: $font-heading;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  color: $color-deep-blue;
+}
+
+.packages-card__price {
+  margin: 0 0 0.25rem;
+  font-weight: 700;
+  font-size: 1.4rem;
+  color: $color-electric-purple;
+}
+
+.packages-card__cycle {
+  margin: 0 0 1rem;
+  color: rgba(10, 37, 64, 0.62);
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.packages-card__list {
+  margin: 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.packages-card__list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(10, 37, 64, 0.06);
+  color: rgba(10, 37, 64, 0.72);
+  font-size: 0.95rem;
+  line-height: 1.5;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.packages-card__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 // --- CTA -------------------------------------------------------------------
 .cta-final {
   scroll-margin-top: clamp(4.25rem, 16vw, 6rem);

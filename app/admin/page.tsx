@@ -827,7 +827,7 @@ export default function AdminPage() {
         />
         <LoadingOverlay show={loading} />
         <main className={styles.authWrap}>
-        <form className={styles.authCard} onSubmit={onTotpSubmit}>
+        <form className={styles.authCard} method="post" onSubmit={onTotpSubmit}>
           <div className={styles.authLogo}>
             <CredraLogo height={40} />
           </div>
@@ -883,7 +883,7 @@ export default function AdminPage() {
         />
         <LoadingOverlay show={loading} />
         <main className={styles.authWrap}>
-        <form className={styles.authCard} onSubmit={onLogin}>
+        <form className={styles.authCard} method="post" onSubmit={onLogin}>
           <div className={styles.authLogo}>
             <CredraLogo height={40} />
           </div>
