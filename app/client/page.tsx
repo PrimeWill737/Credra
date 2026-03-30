@@ -64,6 +64,25 @@ function formatDateLabel(iso: string | undefined): string {
   return d.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
+function addCycleDurationLocal(startedAt: Date, cycle: string): Date {
+  const d = new Date(startedAt.getTime());
+  const c = cycle.trim().toLowerCase();
+  if (c === "weekly") d.setDate(d.getDate() + 7);
+  else if (c === "monthly") d.setMonth(d.getMonth() + 1);
+  else if (c === "yearly") d.setFullYear(d.getFullYear() + 1);
+  else d.setMonth(d.getMonth() + 1);
+  return d;
+}
+
+function formatCountdownMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "Expired";
+  const s = Math.floor(ms / 1000);
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  return `${days}d ${hours}h ${minutes}m`;
+}
+
 function coerceNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -246,6 +265,7 @@ type ClientMeResponse = {
     amount_due: string;
     status: string;
     started_at: string;
+    api_quota: number;
     approved_at: string | null;
   } | null;
   latestTransfer: {
@@ -262,6 +282,9 @@ type ClientMeResponse = {
   };
   stats?: {
     api_calls_30d: number;
+    api_calls_used: number;
+    api_calls_quota: number;
+    api_calls_remaining: number;
   };
 };
 
@@ -280,6 +303,16 @@ function humanizeAuthError(message: string): string {
     email_already_registered:
       "That email is already registered. Please log in instead.",
     signup_failed: "We couldn't start your signup. Please try again.",
+    invalid_plan: "That plan selection isn't valid. Please try again.",
+    invalid_plan_cycle: "That plan doesn't match the billing period. Please try again.",
+    enterprise_subscription_required:
+      "An Enterprise plan is required to extend API usage.",
+    extension_already_in_progress:
+      "You already have an extension request pending approval. Please wait.",
+    extension_request_failed: "We couldn't submit your extension request. Try again.",
+    api_not_included: "Your current plan doesn't include production API access.",
+    api_quota_exceeded:
+      "You've reached your production API call limit. Extend usage or upgrade.",
     pending_token_required:
       "Please restart the signup flow and request a new code.",
     invalid_pending_token: "Your signup session expired. Please sign up again.",
@@ -346,6 +379,13 @@ export default function ClientDashboardPage() {
   const [amountDue, setAmountDue] = useState("310.00");
   const [payerName, setPayerName] = useState("Onoja William Bosworth");
   const [transactionReference, setTransactionReference] = useState("");
+  const [nowMs, setNowMs] = useState<number>(Date.now());
+  const [enterpriseExtendReference, setEnterpriseExtendReference] =
+    useState("");
+  const [enterpriseExtendSubmitting, setEnterpriseExtendSubmitting] =
+    useState(false);
+  const [redirectToSubscriptionAfterSignup, setRedirectToSubscriptionAfterSignup] =
+    useState(false);
 
   const monoRef = useRef<Connect | null>(null);
   const transferSectionRef = useRef<HTMLElement | null>(null);
@@ -387,6 +427,26 @@ export default function ClientDashboardPage() {
 
   const hasSession = useMemo(() => token.length > 0, [token]);
 
+  useEffect(() => {
+    if (token) return; // already logged in / local session present
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode");
+    const planFromUrl = params.get("plan");
+    if (mode !== "signup") return;
+    if (!planFromUrl) return;
+
+    const v = planFromUrl.trim().toLowerCase();
+    const planCard = PLAN_CARDS.find((c) => c.name.toLowerCase() === v);
+    if (!planCard) return;
+
+    // Avoid overwriting user input if they already started signup.
+    if (authMode !== "signup") setAuthMode("signup");
+    setPlanName(planCard.name);
+    setCycle(planCard.cycle);
+    setAmountDue(String(planCard.amountNgn));
+    setRedirectToSubscriptionAfterSignup(true);
+  }, [token, authMode]);
+
   const showLoadingOverlay = useMemo(
     () =>
       (!hasSession && (loading || loginSubmitting)) ||
@@ -413,6 +473,12 @@ export default function ClientDashboardPage() {
     const savedMono = localStorage.getItem(MONO_ACCOUNT_LS) ?? "";
     if (savedMono) setMonoAccountId(savedMono);
   }, []);
+
+  useEffect(() => {
+    if (!me?.subscription?.started_at) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [me?.subscription?.started_at]);
 
   const exchangeMonoCodeForAccount = useCallback(async (code: string) => {
     const clean = sanitizeMonoAuthCode(code);
@@ -639,6 +705,30 @@ export default function ClientDashboardPage() {
     };
   }, [hasSession, token]);
 
+  // Poll /client/me periodically so backend opportunistic reminder emails trigger
+  // even if the user stays on the page.
+  useEffect(() => {
+    if (!hasSession) return;
+    if (!me?.subscription?.started_at) return;
+
+    const id = window.setInterval(() => {
+      void (async () => {
+        try {
+          const meR = await fetch(`${API_BASE}/client/me`, {
+            headers: { ...authz(token) },
+          });
+          if (!meR.ok) return;
+          const data = (await meR.json()) as ClientMeResponse;
+          setMe(data);
+        } catch {
+          // ignore background polling errors
+        }
+      })();
+    }, 30 * 60 * 1000);
+
+    return () => window.clearInterval(id);
+  }, [hasSession, token, me?.subscription?.started_at]);
+
   async function onSignup() {
     setLoading(true);
     setFlashError("");
@@ -841,15 +931,76 @@ export default function ClientDashboardPage() {
       const data = (await meR.json()) as ClientMeResponse;
       setMe(data);
       setTransactionReference("");
-      setFlashSuccess(
-        "Thanks — we received your reference. We'll review it shortly.",
-      );
+      const notified = body?.adminNotified !== false;
+      if (notified) {
+        setFlashSuccess(
+          "Thanks — we received your reference and sent an approval email to the admin.",
+        );
+      } else {
+        setFlashSuccess(
+          "Thanks — we received your reference, but admin email notification failed. Please contact support/admin.",
+        );
+      }
     } catch (e) {
       setFlashError(
         humanizeAuthError(e instanceof Error ? e.message : "Transfer error"),
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function submitApiExtension() {
+    if (!token) return;
+    if (!enterpriseExtendReference.trim()) return;
+    setEnterpriseExtendSubmitting(true);
+    setFlashError("");
+    setFlashSuccess("");
+    try {
+      const ref = sanitizeTransactionReference(enterpriseExtendReference);
+      if (!ref) throw new Error("missing_required_fields");
+
+      const r = await fetch(`${API_BASE}/client/api/extend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authz(token) },
+        body: JSON.stringify({
+          payerName: sanitizePersonName(payerName),
+          transactionReference: ref,
+        }),
+      });
+
+      const body = await r.json().catch(() => null);
+      if (!r.ok) {
+        const msg =
+          typeof body?.error === "string" ? body.error : "extension_request_failed";
+        throw new Error(msg);
+      }
+
+      // refresh dashboard data (quota will update after admin approves)
+      const meR = await fetch(`${API_BASE}/client/me`, {
+        headers: { ...authz(token) },
+      });
+      if (meR.ok) {
+        const data = (await meR.json()) as ClientMeResponse;
+        setMe(data);
+      }
+
+      setEnterpriseExtendReference("");
+      if (body?.adminNotified === false) {
+        setFlashSuccess(
+          "Extension request submitted, but admin email notification failed. Please contact support/admin.",
+        );
+      } else {
+        setFlashSuccess(
+          "Extension request submitted and admin was notified by email.",
+        );
+      }
+    } catch (e) {
+      setFlashError(
+        humanizeAuthError(e instanceof Error ? e.message : "Extension error"),
+      );
+    } finally {
+      setEnterpriseExtendSubmitting(false);
     }
   }
 
@@ -955,6 +1106,52 @@ export default function ClientDashboardPage() {
   const accountStatus = me?.account?.status ?? "—";
   const subscriptionStatus = me?.subscription?.status ?? "—";
 
+  const planExpiry = useMemo(() => {
+    const startedAtISO = me?.subscription?.started_at;
+    const cycle = me?.subscription?.cycle;
+    if (!startedAtISO || !cycle) return null;
+    const startedAt = new Date(startedAtISO);
+    if (Number.isNaN(startedAt.getTime())) return null;
+    return addCycleDurationLocal(startedAt, cycle);
+  }, [me?.subscription?.started_at, me?.subscription?.cycle]);
+
+  const planRemainingLabel = planExpiry
+    ? formatCountdownMs(planExpiry.getTime() - nowMs)
+    : "—";
+
+  const planRemainingMs = planExpiry ? planExpiry.getTime() - nowMs : null;
+  const isReminderWindow =
+    planRemainingMs != null && planRemainingMs > 0 && planRemainingMs <= 2 * 86400000;
+
+  const showApiKeyTab =
+    me?.subscription?.status === "active" && me?.account?.plan_name !== "Starter";
+
+  const apiCallsUsed = me?.stats?.api_calls_used ?? 0;
+  const apiCallsQuota = me?.stats?.api_calls_quota ?? 0;
+  const apiCallsRemaining = me?.stats?.api_calls_remaining ?? 0;
+  const isProPlan = me?.account?.plan_name === "Pro";
+  const isEnterprisePlan = me?.account?.plan_name === "Enterprise";
+
+  const enterpriseExtensionFee = useMemo(() => {
+    const annual = Number(me?.subscription?.amount_due ?? "");
+    if (!Number.isFinite(annual) || annual <= 0) return null;
+    return Math.round(annual * 0.1 * 100) / 100; // keep 2 decimals
+  }, [me?.subscription?.amount_due]);
+
+  const navItems = useMemo(
+    () =>
+      CLIENT_NAV.filter((item) => {
+        if (item.id !== "api-key") return true;
+        return Boolean(showApiKeyTab);
+      }),
+    [showApiKeyTab],
+  );
+
+  useEffect(() => {
+    if (!hasSession) return;
+    if (!navItems.some((i) => i.id === activeNav)) setActiveNav("dashboard");
+  }, [hasSession, navItems, activeNav]);
+
   if (signupSuccess) {
     return (
       <SignupSuccess
@@ -965,6 +1162,10 @@ export default function ClientDashboardPage() {
           localStorage.setItem(CREDRA_CLIENT_TOKEN_LS_KEY, signupSuccessToken);
           localStorage.setItem("credra_client_apiKey", signupSuccessApiKey);
           setSignupSuccess(false);
+          if (redirectToSubscriptionAfterSignup) {
+            setActiveNav("subscription");
+            setRedirectToSubscriptionAfterSignup(false);
+          }
         }}
       />
     );
@@ -1185,7 +1386,7 @@ export default function ClientDashboardPage() {
         <div className={styles.dashShell}>
           <aside className={styles.sideNav} aria-label="Workspace sections">
             <div className={styles.sideNavKicker}>Navigate</div>
-            {CLIENT_NAV.map((item) => (
+            {navItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -1240,6 +1441,12 @@ export default function ClientDashboardPage() {
                       {me?.account?.cycle ?? "—"}
                     </div>
                   </div>
+                  {me?.subscription?.started_at ? (
+                    <div className={styles.kvItem}>
+                      <div className={styles.kvLabel}>Plan expires in</div>
+                      <div className={styles.kvValue}>{planRemainingLabel}</div>
+                    </div>
+                  ) : null}
                   <div className={styles.kvItem}>
                     <div className={styles.kvLabel}>API calls (30d)</div>
                     <div className={styles.kvValue}>
@@ -1562,6 +1769,23 @@ export default function ClientDashboardPage() {
                     Nigerian Naira. Use &quot;Use this plan&quot; to pre-fill
                     the bank transfer form below.
                   </p>
+
+                {me?.subscription?.started_at ? (
+                  <p className={styles.note}>
+                    Plan countdown: <strong>{planRemainingLabel}</strong>{" "}
+                    {planExpiry ? (
+                      <>
+                        (expires {formatDateLabel(planExpiry.toISOString())})
+                      </>
+                    ) : null}
+                    {isReminderWindow ? (
+                      <>
+                        {" "}
+                        — reminder email will be sent soon.
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
                   <div className={styles.planGrid}>
                     {PLAN_CARDS.map((card) => (
                       <div
@@ -1586,9 +1810,22 @@ export default function ClientDashboardPage() {
                         <button
                           type="button"
                           className={styles.planCardBtn}
-                          onClick={() => applyPlan(card)}
+                          disabled={
+                            me?.subscription?.status === "active" &&
+                            me?.account?.plan_name === card.name
+                          }
+                          onClick={() => {
+                            const isSubscribed =
+                              me?.subscription?.status === "active" &&
+                              me?.account?.plan_name === card.name;
+                            if (isSubscribed) return;
+                            applyPlan(card);
+                          }}
                         >
-                          Use this plan
+                          {me?.subscription?.status === "active" &&
+                          me?.account?.plan_name === card.name
+                            ? "Subscribed"
+                            : "Use this plan"}
                         </button>
                       </div>
                     ))}
@@ -1733,10 +1970,61 @@ export default function ClientDashboardPage() {
                       if (!apiKey) return;
                       void navigator.clipboard.writeText(apiKey);
                     }}
+                    disabled={!apiKey}
                   >
                     Copy
                   </button>
                 </div>
+                {isProPlan ? (
+                  <p className={styles.note}>
+                    Pro API limit: <strong>{apiCallsQuota}</strong> calls per
+                    period. Used {apiCallsUsed}. Remaining{" "}
+                    <strong>{apiCallsRemaining}</strong>.
+                  </p>
+                ) : null}
+
+                {isEnterprisePlan ? (
+                  <>
+                    <p className={styles.note}>
+                      Enterprise API limit: <strong>{apiCallsQuota}</strong>{" "}
+                      calls per year. Used {apiCallsUsed}. Remaining{" "}
+                      <strong>{apiCallsRemaining}</strong>.
+                    </p>
+                    <div className={styles.field}>
+                      <label>Extend API usage (transaction reference)</label>
+                      <input
+                        value={enterpriseExtendReference}
+                        onChange={(e) =>
+                          setEnterpriseExtendReference(
+                            sanitizeTransactionReference(e.target.value),
+                          )
+                        }
+                        placeholder="e.g. TRX/xxxxxxxx"
+                        maxLength={120}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.primaryBtn}
+                      onClick={() => void submitApiExtension()}
+                      disabled={
+                        enterpriseExtendSubmitting ||
+                        !sanitizeTransactionReference(enterpriseExtendReference)
+                      }
+                    >
+                      Submit extension reference
+                    </button>
+                    {enterpriseExtensionFee != null ? (
+                      <p className={styles.muted} style={{ marginTop: "0.5rem" }}>
+                        Each extension adds +100 calls/year for +10% of your
+                        annual plan price ({formatNgn(enterpriseExtensionFee)}).
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+
                 <p className={styles.note}>
                   Endpoints:{" "}
                   <span className={styles.mono}>

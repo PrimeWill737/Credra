@@ -231,6 +231,8 @@ CREATE TABLE client_subscriptions (
   status VARCHAR(32) NOT NULL DEFAULT 'pending_transfer',
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   approved_at TIMESTAMPTZ,
+  api_quota INT NOT NULL DEFAULT 0,
+  plan_expiration_reminder_2d_sent_at TIMESTAMPTZ,
   cancelled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -238,12 +240,14 @@ CREATE TABLE client_subscriptions (
 CREATE TABLE client_transfers (
   id BIGSERIAL PRIMARY KEY,
   subscription_id BIGINT NOT NULL REFERENCES client_subscriptions(id) ON DELETE CASCADE,
+  kind VARCHAR(32) NOT NULL DEFAULT 'subscription',
   payer_name VARCHAR(255) NOT NULL,
   receiving_bank_name VARCHAR(64) NOT NULL,
   receiving_account_number VARCHAR(64) NOT NULL,
   receiving_account_name VARCHAR(255) NOT NULL,
   transaction_reference VARCHAR(128) NOT NULL UNIQUE,
   amount NUMERIC(12,2) NOT NULL,
+  api_quota_delta INT,
   status VARCHAR(32) NOT NULL DEFAULT 'pending_admin',
   admin_reviewed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

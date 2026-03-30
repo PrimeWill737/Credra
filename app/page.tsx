@@ -4,10 +4,18 @@ import { CredraLogo } from "./components/CredraLogo";
 import { HeroMegaCard } from "./components/HeroMegaCard";
 import { Reveal } from "./components/Reveal";
 import { SiteHeader } from "./components/SiteHeader";
+import { PLAN_CARDS } from "./client/planCatalog";
 import creditScoreImg from "./img/credit-score.jpg";
 import heroImg from "./img/hero.jpg";
 
 export default function HomePage() {
+  const formatNgn = (amount: number): string =>
+    new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      maximumFractionDigits: 0,
+    }).format(amount);
+
   return (
     <div className="shell">
       <SiteHeader />
@@ -231,6 +239,43 @@ export default function HomePage() {
                   </ul>
                 </div>
               </div>
+            </div>
+          </section>
+        </Reveal>
+
+        <Reveal variant="auto" delayMs={15}>
+          <section id="packages" className="packages-panel" aria-labelledby="packages-title">
+            <div className="packages-panel__head">
+              <h2 id="packages-title" className="packages-panel__title">
+                Choose your package
+              </h2>
+              <p className="packages-panel__lede">
+                Starter for sandbox validation, Pro for limited production access, and Enterprise for annual production capacity with usage extensions.
+              </p>
+            </div>
+            <div className="packages-panel__grid">
+              {PLAN_CARDS.map((card) => (
+                <article key={card.id} className="packages-card">
+                  <h3 className="packages-card__name">{card.name}</h3>
+                  <p className="packages-card__price">{formatNgn(card.amountNgn)}</p>
+                  <p className="packages-card__cycle">
+                    per {card.durationLabel} · {card.cycle}
+                  </p>
+                  <ul className="packages-card__list">
+                    {card.features.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  <a
+                    className="btn btn--primary packages-card__cta"
+                    href={`/client?mode=signup&plan=${encodeURIComponent(card.name)}&cycle=${encodeURIComponent(
+                      card.cycle,
+                    )}`}
+                  >
+                    Choose {card.name}
+                  </a>
+                </article>
+              ))}
             </div>
           </section>
         </Reveal>
