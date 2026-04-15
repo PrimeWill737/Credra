@@ -7,15 +7,20 @@ export function FlashNotices({
   success,
   onDismissError,
   onDismissSuccess,
+  variant = "fixed",
 }: {
   error: string;
   success: string;
   onDismissError: () => void;
   onDismissSuccess: () => void;
+  /** `fixed` = top-right toast; `inline` = in document flow near buttons */
+  variant?: "fixed" | "inline";
 }) {
   if (!error && !success) return null;
+  const wrapClass =
+    variant === "inline" ? `${styles.wrap} ${styles.wrapInline}` : styles.wrap;
   return (
-    <div className={styles.wrap}>
+    <div className={wrapClass}>
       {error ? (
         <div className={styles.badgeError} role="alert">
           <button
