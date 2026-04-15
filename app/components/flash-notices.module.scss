@@ -18,6 +18,21 @@
   }
 }
 
+.wrapInline {
+  position: static;
+  z-index: auto;
+  align-items: stretch;
+  max-width: none;
+  width: 100%;
+  margin-bottom: 0.85rem;
+  pointer-events: auto;
+
+  .badgeError,
+  .badgeSuccess {
+    box-shadow: 0 2px 12px rgba(10, 37, 64, 0.08);
+  }
+}
+
 @mixin badge-base {
   margin: 0;
   padding: 0.65rem 2rem 0.65rem 0.85rem;

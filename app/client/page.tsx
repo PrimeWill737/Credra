@@ -313,6 +313,8 @@ function humanizeAuthError(message: string): string {
     api_not_included: "Your current plan doesn't include production API access.",
     api_quota_exceeded:
       "You've reached your production API call limit. Extend usage or upgrade.",
+    transaction_reference_already_used:
+      "That payment reference was already used. Enter a new bank reference.",
     pending_token_required:
       "Please restart the signup flow and request a new code.",
     invalid_pending_token: "Your signup session expired. Please sign up again.",
@@ -354,6 +356,29 @@ export default function ClientDashboardPage() {
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [flashError, setFlashError] = useState("");
   const [flashSuccess, setFlashSuccess] = useState("");
+  type FlashScope =
+    | "gate"
+    | "dashboard"
+    | "playground"
+    | "mono"
+    | "subscription"
+    | "api-key"
+    | "settings";
+  const [flashScope, setFlashScope] = useState<FlashScope>("gate");
+
+  const flash = useCallback(
+    (next: { scope: FlashScope; error?: string; success?: string }) => {
+      setFlashScope(next.scope);
+      setFlashError(next.error ?? "");
+      setFlashSuccess(next.success ?? "");
+    },
+    [],
+  );
+
+  const clearFlash = useCallback(() => {
+    setFlashError("");
+    setFlashSuccess("");
+  }, []);
 
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
@@ -511,13 +536,16 @@ export default function ClientDashboardPage() {
   }, []);
 
   const openMonoConnect = useCallback(async () => {
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "mono", error: "", success: "" });
     setMonoBalance(null);
     setMonoTransactions([]);
 
     if (!MONO_PUBLIC_KEY) {
-      setFlashError(humanizeMonoForUser("missing public key", "connect"));
+      flash({
+        scope: "mono",
+        error: humanizeMonoForUser("missing public key", "connect"),
+        success: "",
+      });
       return;
     }
 
@@ -527,20 +555,30 @@ export default function ClientDashboardPage() {
         onSuccess: async (payload: { code?: string }) => {
           const code = sanitizeMonoAuthCode(String(payload?.code ?? ""));
           if (!code) {
-            setFlashError(humanizeMonoForUser("no auth code", "connect"));
+            flash({
+              scope: "mono",
+              error: humanizeMonoForUser("no auth code", "connect"),
+              success: "",
+            });
             return;
           }
           setMonoCode(code);
           try {
             await exchangeMonoCodeForAccount(code);
-            setFlashSuccess("Bank linked successfully.");
+            flash({
+              scope: "mono",
+              error: "",
+              success: "Bank linked successfully.",
+            });
           } catch (e) {
-            setFlashError(
-              humanizeMonoForUser(
+            flash({
+              scope: "mono",
+              error: humanizeMonoForUser(
                 e instanceof Error ? e.message : "exchange failed",
                 "connect",
               ),
-            );
+              success: "",
+            });
           }
         },
         onClose: () => {
@@ -551,14 +589,17 @@ export default function ClientDashboardPage() {
     }
 
     monoRef.current.open();
-  }, [exchangeMonoCodeForAccount]);
+  }, [exchangeMonoCodeForAccount, flash]);
 
   const fetchMonoBalance = useCallback(async () => {
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "mono", error: "", success: "" });
     setMonoBalance(null);
     if (!monoAccountId) {
-      setFlashError(humanizeMonoForUser("connect first", "balance"));
+      flash({
+        scope: "mono",
+        error: humanizeMonoForUser("connect first", "balance"),
+        success: "",
+      });
       return;
     }
     const response = await fetch(
@@ -571,19 +612,26 @@ export default function ClientDashboardPage() {
     if (!response.ok) {
       const msg =
         typeof body?.error === "string" ? body.error : "balance_failed";
-      setFlashError(humanizeMonoForUser(msg, "balance"));
+      flash({
+        scope: "mono",
+        error: humanizeMonoForUser(msg, "balance"),
+        success: "",
+      });
       return;
     }
     setMonoBalance(body ?? {});
-    setFlashSuccess("Balance updated.");
-  }, [monoAccountId]);
+    flash({ scope: "mono", error: "", success: "Balance updated." });
+  }, [monoAccountId, flash]);
 
   const fetchMonoTransactions = useCallback(async () => {
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "mono", error: "", success: "" });
     setMonoTransactions([]);
     if (!monoAccountId) {
-      setFlashError(humanizeMonoForUser("connect first", "transactions"));
+      flash({
+        scope: "mono",
+        error: humanizeMonoForUser("connect first", "transactions"),
+        success: "",
+      });
       return;
     }
     const response = await fetch(
@@ -596,22 +644,25 @@ export default function ClientDashboardPage() {
     if (!response.ok) {
       const msg =
         typeof body?.error === "string" ? body.error : "transactions_failed";
-      setFlashError(humanizeMonoForUser(msg, "transactions"));
+      flash({
+        scope: "mono",
+        error: humanizeMonoForUser(msg, "transactions"),
+        success: "",
+      });
       return;
     }
     const arr = (body?.data as unknown) ?? [];
     setMonoTransactions(
       Array.isArray(arr) ? (arr as Array<Record<string, unknown>>) : [],
     );
-    setFlashSuccess("Transactions loaded.");
-  }, [monoAccountId]);
+    flash({ scope: "mono", error: "", success: "Transactions loaded." });
+  }, [monoAccountId, flash]);
 
   const runPlayground = useCallback(
     async (path: PlaygroundPath) => {
       if (!token) return;
       setPlaygroundLoading(true);
-      setFlashError("");
-      setFlashSuccess("");
+      flash({ scope: "playground", error: "", success: "" });
       setPlaygroundData(null);
       setPlaygroundKind(null);
       try {
@@ -659,14 +710,18 @@ export default function ClientDashboardPage() {
         setPlaygroundData(data);
         setPlaygroundKind(pathToInsightKind(path));
       } catch (e) {
-        setFlashError(
-          humanizeAuthError(e instanceof Error ? e.message : "playground_error"),
-        );
+        flash({
+          scope: "playground",
+          error: humanizeAuthError(
+            e instanceof Error ? e.message : "playground_error",
+          ),
+          success: "",
+        });
       } finally {
         setPlaygroundLoading(false);
       }
     },
-    [token, monthlyIncome, monthlySpend, txCount, volatilityHint],
+    [token, monthlyIncome, monthlySpend, txCount, volatilityHint, flash],
   );
 
   useEffect(() => {
@@ -676,7 +731,7 @@ export default function ClientDashboardPage() {
 
     void (async () => {
       setLoading(true);
-      setFlashError("");
+      flash({ scope: "dashboard", error: "", success: "" });
       try {
         const r = await fetch(`${API_BASE}/client/me`, {
           headers: { "Content-Type": "application/json", ...authz(token) },
@@ -687,11 +742,13 @@ export default function ClientDashboardPage() {
         if (!cancelled) setMe(data);
       } catch (e) {
         if (!cancelled) {
-          setFlashError(
-            humanizeAuthError(
+          flash({
+            scope: "dashboard",
+            error: humanizeAuthError(
               e instanceof Error ? e.message : "dashboard_load_failed",
             ),
-          );
+            success: "",
+          });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -703,7 +760,7 @@ export default function ClientDashboardPage() {
       // Session fetch must not block the logged-out login form if logout happens mid-request.
       setLoading(false);
     };
-  }, [hasSession, token]);
+  }, [hasSession, token, flash]);
 
   // Poll /client/me periodically so backend opportunistic reminder emails trigger
   // even if the user stays on the page.
@@ -731,8 +788,7 @@ export default function ClientDashboardPage() {
 
   async function onSignup() {
     setLoading(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "gate", error: "", success: "" });
     try {
       const companyName = sanitizeOrganizationName(signupCompany);
       const contactEmail = sanitizeEmailInput(signupEmail);
@@ -764,17 +820,20 @@ export default function ClientDashboardPage() {
         setAwaitingOtp(true);
         setPendingSignupToken(String(body.pendingToken));
         setSignupOtp("");
-        setFlashSuccess(
-          `We sent a 6-digit code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes — enter it below to finish.`,
-        );
+        flash({
+          scope: "gate",
+          success: `We sent a 6-digit code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes — enter it below to finish.`,
+          error: "",
+        });
         return;
       }
       throw new Error("OTP required but missing.");
     } catch (e) {
-      setFlashSuccess("");
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "Signup error"),
-      );
+      flash({
+        scope: "gate",
+        success: "",
+        error: humanizeAuthError(e instanceof Error ? e.message : "Signup error"),
+      });
     } finally {
       setLoading(false);
     }
@@ -782,8 +841,7 @@ export default function ClientDashboardPage() {
 
   async function verifySignupOtp() {
     setLoading(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "gate", error: "", success: "" });
     try {
       const pendingToken = sanitizePendingToken(pendingSignupToken);
       const otp = sanitizeOtpDigits(signupOtp, 6);
@@ -817,9 +875,11 @@ export default function ClientDashboardPage() {
       setSignupSuccessApiKey(newKey);
       setSignupSuccess(true);
     } catch (e) {
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "OTP error"),
-      );
+      flash({
+        scope: "gate",
+        error: humanizeAuthError(e instanceof Error ? e.message : "OTP error"),
+        success: "",
+      });
     } finally {
       setLoading(false);
     }
@@ -827,7 +887,7 @@ export default function ClientDashboardPage() {
 
   async function resendSignupOtp() {
     setLoading(true);
-    setFlashError("");
+    flash({ scope: "gate", error: "", success: "" });
     try {
       const pendingToken = sanitizePendingToken(pendingSignupToken);
       if (!pendingToken) {
@@ -843,14 +903,17 @@ export default function ClientDashboardPage() {
         const msg = body?.error ? String(body.error) : "Resend failed";
         throw new Error(msg);
       }
-      setFlashSuccess(
-        `We sent a new code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes.`,
-      );
+      flash({
+        scope: "gate",
+        success: `We sent a new code to ${sanitizeEmailInput(signupEmail)}. It expires in 10 minutes.`,
+        error: "",
+      });
     } catch (e) {
-      setFlashSuccess("");
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "Resend error"),
-      );
+      flash({
+        scope: "gate",
+        success: "",
+        error: humanizeAuthError(e instanceof Error ? e.message : "Resend error"),
+      });
     } finally {
       setLoading(false);
     }
@@ -859,8 +922,7 @@ export default function ClientDashboardPage() {
   async function onLogin() {
     setLoginSubmitting(true);
     setLoading(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "gate", error: "", success: "" });
     setLoginSuccess(false);
     try {
       const email = sanitizeEmailInput(loginEmail);
@@ -887,9 +949,11 @@ export default function ClientDashboardPage() {
       setLoginSuccessName(accountName);
       setLoginSuccess(true);
     } catch (e) {
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "Login error"),
-      );
+      flash({
+        scope: "gate",
+        error: humanizeAuthError(e instanceof Error ? e.message : "Login error"),
+        success: "",
+      });
     } finally {
       setLoginSubmitting(false);
       setLoading(false);
@@ -899,8 +963,7 @@ export default function ClientDashboardPage() {
   async function submitTransfer() {
     if (!token) return;
     setLoading(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "subscription", error: "", success: "" });
     try {
       const ref = sanitizeTransactionReference(transactionReference);
       if (!ref) {
@@ -933,18 +996,28 @@ export default function ClientDashboardPage() {
       setTransactionReference("");
       const notified = body?.adminNotified !== false;
       if (notified) {
-        setFlashSuccess(
-          "Thanks — we received your reference and sent an approval email to the admin.",
-        );
+        flash({
+          scope: "subscription",
+          success:
+            "Thanks — we received your reference and sent an approval email to the admin.",
+          error: "",
+        });
       } else {
-        setFlashSuccess(
-          "Thanks — we received your reference, but admin email notification failed. Please contact support/admin.",
-        );
+        flash({
+          scope: "subscription",
+          success:
+            "Thanks — we received your reference, but admin email notification failed. Please contact support/admin.",
+          error: "",
+        });
       }
     } catch (e) {
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "Transfer error"),
-      );
+      flash({
+        scope: "subscription",
+        error: humanizeAuthError(
+          e instanceof Error ? e.message : "Transfer error",
+        ),
+        success: "",
+      });
     } finally {
       setLoading(false);
     }
@@ -954,8 +1027,7 @@ export default function ClientDashboardPage() {
     if (!token) return;
     if (!enterpriseExtendReference.trim()) return;
     setEnterpriseExtendSubmitting(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "api-key", error: "", success: "" });
     try {
       const ref = sanitizeTransactionReference(enterpriseExtendReference);
       if (!ref) throw new Error("missing_required_fields");
@@ -987,18 +1059,28 @@ export default function ClientDashboardPage() {
 
       setEnterpriseExtendReference("");
       if (body?.adminNotified === false) {
-        setFlashSuccess(
-          "Extension request submitted, but admin email notification failed. Please contact support/admin.",
-        );
+        flash({
+          scope: "api-key",
+          success:
+            "Extension request submitted, but admin email notification failed. Please contact support/admin.",
+          error: "",
+        });
       } else {
-        setFlashSuccess(
-          "Extension request submitted and admin was notified by email.",
-        );
+        flash({
+          scope: "api-key",
+          success:
+            "Extension request submitted and admin was notified by email.",
+          error: "",
+        });
       }
     } catch (e) {
-      setFlashError(
-        humanizeAuthError(e instanceof Error ? e.message : "Extension error"),
-      );
+      flash({
+        scope: "api-key",
+        error: humanizeAuthError(
+          e instanceof Error ? e.message : "Extension error",
+        ),
+        success: "",
+      });
     } finally {
       setEnterpriseExtendSubmitting(false);
     }
@@ -1021,8 +1103,7 @@ export default function ClientDashboardPage() {
   async function changePassword() {
     if (!token) return;
     setPwdSubmitting(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "settings", error: "", success: "" });
     try {
       const r = await fetch(`${API_BASE}/client/auth/password`, {
         method: "POST",
@@ -1038,7 +1119,11 @@ export default function ClientDashboardPage() {
           typeof body.error === "string" ? body.error : "password_change_failed",
         );
       }
-      setFlashSuccess("Your password was updated.");
+      flash({
+        scope: "settings",
+        success: "Your password was updated.",
+        error: "",
+      });
       setPwdCurrent("");
       setPwdNew("");
     } catch (e) {
@@ -1049,7 +1134,11 @@ export default function ClientDashboardPage() {
         invalid_current_password: "That current password isn't correct.",
         password_change_failed: "We couldn't update your password. Try again.",
       };
-      setFlashError(map[key] ?? humanizeApiSlug(key));
+      flash({
+        scope: "settings",
+        error: map[key] ?? humanizeApiSlug(key),
+        success: "",
+      });
     } finally {
       setPwdSubmitting(false);
     }
@@ -1062,8 +1151,7 @@ export default function ClientDashboardPage() {
     );
     if (!ok) return;
     setCancelSubmitting(true);
-    setFlashError("");
-    setFlashSuccess("");
+    flash({ scope: "settings", error: "", success: "" });
     try {
       const r = await fetch(`${API_BASE}/client/subscription/cancel`, {
         method: "POST",
@@ -1075,7 +1163,11 @@ export default function ClientDashboardPage() {
           typeof body.error === "string" ? body.error : "cancel_failed",
         );
       }
-      setFlashSuccess("Your subscription is cancelled.");
+      flash({
+        scope: "settings",
+        success: "Your subscription is cancelled.",
+        error: "",
+      });
       const meR = await fetch(`${API_BASE}/client/me`, {
         headers: { "Content-Type": "application/json", ...authz(token) },
       });
@@ -1086,7 +1178,11 @@ export default function ClientDashboardPage() {
         subscription_not_cancellable: "There is no active subscription to cancel.",
         cancel_failed: "Could not cancel. Try again or contact support.",
       };
-      setFlashError(map[key] ?? humanizeApiSlug(key));
+      flash({
+        scope: "settings",
+        error: map[key] ?? humanizeApiSlug(key),
+        success: "",
+      });
     } finally {
       setCancelSubmitting(false);
     }
@@ -1095,8 +1191,7 @@ export default function ClientDashboardPage() {
   function onLogout() {
     setToken("");
     setMe(null);
-    setFlashError("");
-    setFlashSuccess("");
+    clearFlash();
     setLoading(false);
     setLoginSubmitting(false);
     localStorage.removeItem(CREDRA_CLIENT_TOKEN_LS_KEY);
@@ -1122,6 +1217,7 @@ export default function ClientDashboardPage() {
   const planRemainingMs = planExpiry ? planExpiry.getTime() - nowMs : null;
   const isReminderWindow =
     planRemainingMs != null && planRemainingMs > 0 && planRemainingMs <= 2 * 86400000;
+  const isPlanExpired = planRemainingMs != null && planRemainingMs <= 0;
 
   const showApiKeyTab =
     me?.subscription?.status === "active" && me?.account?.plan_name !== "Starter";
@@ -1193,12 +1289,6 @@ export default function ClientDashboardPage() {
     <main
       className={`${styles.page} ${hasSession ? styles.pageDash : styles.pageGate}`}
     >
-      <FlashNotices
-        error={flashError}
-        success={flashSuccess}
-        onDismissError={() => setFlashError("")}
-        onDismissSuccess={() => setFlashSuccess("")}
-      />
       <LoadingOverlay show={showLoadingOverlay} />
       <div className={styles.ambient} aria-hidden />
       <header className={hasSession ? styles.topBar : styles.centerTopBar}>
@@ -1239,6 +1329,15 @@ export default function ClientDashboardPage() {
             {authMode === "login" ? (
               <section className={styles.card}>
                 <h2 className={styles.cardTitle}>Log in</h2>
+                {flashScope === "gate" && authMode === "login" ? (
+                  <FlashNotices
+                    variant="inline"
+                    error={flashError}
+                    success={flashSuccess}
+                    onDismissError={clearFlash}
+                    onDismissSuccess={clearFlash}
+                  />
+                ) : null}
                 <div className={styles.field}>
                   <label>Email</label>
                   <input
@@ -1284,6 +1383,15 @@ export default function ClientDashboardPage() {
             ) : (
               <section className={styles.card}>
                 <h2 className={styles.cardTitle}>Sign up</h2>
+                {flashScope === "gate" && authMode === "signup" ? (
+                  <FlashNotices
+                    variant="inline"
+                    error={flashError}
+                    success={flashSuccess}
+                    onDismissError={clearFlash}
+                    onDismissSuccess={clearFlash}
+                  />
+                ) : null}
                 <div className={styles.field}>
                   <label>Company name</label>
                   <input
@@ -1402,6 +1510,15 @@ export default function ClientDashboardPage() {
           <div className={styles.dashMain}>
             {activeNav === "dashboard" ? (
               <>
+                {flashScope === "dashboard" ? (
+                  <FlashNotices
+                    variant="inline"
+                    error={flashError}
+                    success={flashSuccess}
+                    onDismissError={clearFlash}
+                    onDismissSuccess={clearFlash}
+                  />
+                ) : null}
                 <section className={styles.heroCard}>
                   <div className={styles.heroCardInner}>
                     <div>
@@ -1530,6 +1647,15 @@ export default function ClientDashboardPage() {
                       />
                     </div>
                   </div>
+                  {flashScope === "playground" ? (
+                    <FlashNotices
+                      variant="inline"
+                      error={flashError}
+                      success={flashSuccess}
+                      onDismissError={clearFlash}
+                      onDismissSuccess={clearFlash}
+                    />
+                  ) : null}
                   <div className={styles.playRow}>
                     <button
                       type="button"
@@ -1586,6 +1712,15 @@ export default function ClientDashboardPage() {
                       on demand.
                     </p>
                   </div>
+                  {flashScope === "mono" ? (
+                    <FlashNotices
+                      variant="inline"
+                      error={flashError}
+                      success={flashSuccess}
+                      onDismissError={clearFlash}
+                      onDismissSuccess={clearFlash}
+                    />
+                  ) : null}
                   <div className={styles.playRow}>
                     <button
                       type="button"
@@ -1812,20 +1947,28 @@ export default function ClientDashboardPage() {
                           className={styles.planCardBtn}
                           disabled={
                             me?.subscription?.status === "active" &&
+                            !isPlanExpired &&
                             me?.account?.plan_name === card.name
                           }
                           onClick={() => {
                             const isSubscribed =
                               me?.subscription?.status === "active" &&
+                              !isPlanExpired &&
                               me?.account?.plan_name === card.name;
                             if (isSubscribed) return;
                             applyPlan(card);
                           }}
                         >
                           {me?.subscription?.status === "active" &&
-                          me?.account?.plan_name === card.name
-                            ? "Subscribed"
-                            : "Use this plan"}
+                          me?.account?.plan_name === card.name ? (
+                            isPlanExpired ? (
+                              "Resubscribe"
+                            ) : (
+                              "Subscribed"
+                            )
+                          ) : (
+                            "Use this plan"
+                          )}
                         </button>
                       </div>
                     ))}
@@ -1931,6 +2074,16 @@ export default function ClientDashboardPage() {
                     />
                   </div>
 
+                  {flashScope === "subscription" ? (
+                    <FlashNotices
+                      variant="inline"
+                      error={flashError}
+                      success={flashSuccess}
+                      onDismissError={clearFlash}
+                      onDismissSuccess={clearFlash}
+                    />
+                  ) : null}
+
                   <button
                     type="button"
                     className={styles.primaryBtn}
@@ -1975,6 +2128,15 @@ export default function ClientDashboardPage() {
                     Copy
                   </button>
                 </div>
+                {flashScope === "api-key" ? (
+                  <FlashNotices
+                    variant="inline"
+                    error={flashError}
+                    success={flashSuccess}
+                    onDismissError={clearFlash}
+                    onDismissSuccess={clearFlash}
+                  />
+                ) : null}
                 {isProPlan ? (
                   <p className={styles.note}>
                     Pro API limit: <strong>{apiCallsQuota}</strong> calls per
@@ -2048,6 +2210,15 @@ export default function ClientDashboardPage() {
                 <p className={styles.muted}>
                   Use a strong password you do not reuse elsewhere.
                 </p>
+                {flashScope === "settings" ? (
+                  <FlashNotices
+                    variant="inline"
+                    error={flashError}
+                    success={flashSuccess}
+                    onDismissError={clearFlash}
+                    onDismissSuccess={clearFlash}
+                  />
+                ) : null}
                 <div className={styles.field}>
                   <label>Current password</label>
                   <input

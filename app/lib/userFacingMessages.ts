@@ -44,6 +44,13 @@ const SLUG_MAP: Record<string, string> = {
   mono_token_exchange_failed: "We couldn't connect to your bank. Please try again.",
   signup_failed: "We couldn't create your account. Please try again.",
   cancel_failed: "We couldn't cancel your plan. Please try again or contact support.",
+  subscription_already_in_progress:
+    "You already have an active plan or a transfer awaiting admin approval. If your plan has expired, refresh the page and try resubscribing.",
+  transaction_reference_already_used:
+    "That payment reference was already used. Enter a new bank reference.",
+  invalid_plan_cycle: "That plan and billing cycle do not match. Please pick the correct plan card.",
+  amount_due_invalid: "Enter a valid amount due and try again.",
+  transfer_request_failed: "We couldn't submit that transfer reference. Please try again.",
   subscription_not_cancellable: "There's nothing to cancel on this account.",
   password_change_failed: "We couldn't update your password. Please try again.",
   invalid_password_fields: "Please fill in both password fields. Your new password needs to be at least 8 characters.",
